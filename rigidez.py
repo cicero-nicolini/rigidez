@@ -1,11 +1,21 @@
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.collections import LineCollection
 
-print("hello world")
+lines = [
+	[(0, 1), (1, 1)],
+	[(2, 3), (3, 3)],
+	[(1, 2), (1, 3)],
+]
 
-x = np.linspace(0, 2 * np.pi, 200)
-y = np.sin(x)
+xpoints = np.array([1, 8])
+ypoints = np.array([3, 10])
 
+
+lc = LineCollection(lines, linewidths=2)
 fig, ax = plt.subplots()
-ax.plot(x, y)
+ax.add_collection(lc)
+ax.plot(xpoints, ypoints, 'ro')
+ax.autoscale()
+ax.margins(0.1)
 plt.show()
