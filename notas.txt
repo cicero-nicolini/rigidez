@@ -1,0 +1,15 @@
+Comandos
+
+- git init - usar para criar um novo resitório
+
+- git status - mostra as últimas mudanças
+
+- git add - adiciona as mudanças do arquivo para o próximo commit
+
+- git log - mostra lista de commits anteriores
+
+- git commit -m "mensagem" - cria um novo commit
+
+- git diff --cached - mostra todas as mudanças que vão entrar no próximo commit (usar tecla q para sair da visualização)
+
+- ponto = diretório atual
