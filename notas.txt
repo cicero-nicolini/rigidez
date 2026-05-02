@@ -12,4 +12,6 @@ Comandos
 
 - git diff --cached - mostra todas as mudanças que vão entrar no próximo commit (usar tecla q para sair da visualização)
 
+- git push - enviar commit para github
+
 - ponto = diretório atual
