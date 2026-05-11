@@ -3,7 +3,7 @@ import numpy as np
 from matplotlib.collections import LineCollection
 
 meu_nos = [
-    (20,40),
+    (15,40),
     (40,40),
     (20,20),
     (40,20),
