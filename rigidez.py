@@ -14,10 +14,8 @@ class Barra:
         self.indice_no1 = no1
         self.indice_no2 = no2   
 
-class Carga:
-    def __init__(self, tipo, ):
-        self.tipo =
-        self.indice_no2 =            
+#class Estrutura:
+ 
 
 
 meu_nos = [
@@ -163,14 +161,11 @@ for barra in meu_barras:
     tamanho = comprimento_barra(no_inicio, no_fim)
     KL = matriz_local(E, area, inercia, tamanho)
     K = R_T @ KL @ R
-    tipo = "distribuida"
-    fep = Fep_local(tipo, 0.24, no_inicio, no_fim)
-    print(fep)
     print(tamanho)
 
-
-
-
+tipo = "distribuida"
+fep = Fep_local(tipo, 0.24, no_inicio, no_fim)
+print(fep)
 
 
 
