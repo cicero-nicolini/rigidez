@@ -23,7 +23,7 @@ class Barra:
         self.r = np.zeros((6,6))
         self.fepl = np.zeros((6))
 
-    def comprimento_barra(self): #argamentos são coordenadas dos nós
+    def comprimento_barra(self):
         dx = self.noj.x - self.noi.x
         dy = self.noj.y - self.noi.y
         self.L = math.sqrt( dx * dx + dy * dy )
@@ -75,8 +75,6 @@ class Barra:
         self.r[4,4] = c
         self.r[5,5] = 1 
     
-    def calcula_fepl(self):
-        lw = self.L
 
 class Carregamento_distribuido: 
      
@@ -88,29 +86,68 @@ class Carregamento_distribuido:
         self.barra = barra
         
     def calcula_Fepl(self):
+        L = self.barra.L
+        b = L - self.lw - self.a
+        wm = (self.w1 + self.w2)/2.0
+        wd = self.w2 - self.w1
+        s1 = 10.0*((L*L + self.a*self.a)*(L+self.a)-(self.a*self.a+b*b)*(self.a-b)-(L*b)*(L+b)-self.a**3.0)
+        s2 = self.lw*(L*(2.0*L+self.a+b)-3.0*(self.a-b)*(self.a-b)-2.0*self.a*b)
+        s3 = 120.0*self.a*b*(self.a + self.lw)+10.0*self.lw*(6.0*self.a*self.a+4.0*L*self.lw-3.0*self.lw*self.lw)
+        s4 = 10.0*L*self.lw*self.lw-10.0*self.lw*self.a*(L-3.0*b)-9.0*self.lw**3
+        rb = (self.lw*(s1 * wm + s2 * wd ))/(20.0*L**3)
+        ra = self.lw*wm-rb
+        mb = -(self.lw*(s3*wm+s4*wd))/(120.0*L*L)
+        ma = -mb+rb*L-self.a*self.lw*wm-(self.lw*self.lw*(2.0*self.w2+self.w1))/6.0
+        self.barra.fepl[1] = ra
+        self.barra.fepl[2] = ma
+        self.barra.fepl[4] = rb
+        self.barra.fepl[5] = mb
+        #self.barra.fepl[0] = self.barra.fepl[0]+ 1 
 
+class Carregamento_pontual: 
+     
+    def __init__(self, a, P, barra):
+        self.a = a
+        self.P = P
+        self.barra = barra
 
-
-
-        self.barra.fepl[0] = self.barra.fepl[0]+ 1 
-
+    def calcula_Fepl(self):
+        L = self.barra.L
+        b = L - self.a
+        sa = L + 2*self.a
+        sb = L + 2*b
+        ra = (self.P*b*b*sa)/(L**3)
+        rb = (self.P*self.a*self.a*sb)/(L**3)
+        ma = (self.P*self.a*b*b)/(L*L)
+        mb = -(self.P*self.a*self.a*b)/(L*L)
+        self.barra.fepl[1] = ra
+        self.barra.fepl[2] = ma
+        self.barra.fepl[4] = rb
+        self.barra.fepl[5] = mb    
         
 
-no1 = No(1,60,135)
-no2 = No(2,160,135)
+no1 = No(1,60.0,135.0)
+no2 = No(2,160.0,135.0)
+no3 = No(3,260.0,60.0)
 
-barra1 = Barra(1,no1,no2,10000,2*5,1000)
+barra1 = Barra(1.0,no1,no2,10000.0,2.0*5.0,1000.0)
+barra2 = Barra(2.0,no2,no3,10000.0,2.0*5.0,1000.0)
 barra1.comprimento_barra()
+barra2.comprimento_barra()
+barra1.calcula_klocal()
 barra1.calcula_klocal()
 barra1.calcula_r()
 print(barra1.kl)
 print(barra1.r)
-carregamento1 = Carregamento_distribuido(10,20,30,40,barra1)
+carregamento1 = Carregamento_distribuido(0,100,0.24,0.24,barra1)
+carregamento2 = Carregamento_pontual(62.5,16.0,barra2)
+carregamento1.calcula_Fepl()
+carregamento2.calcula_Fepl()
 print(barra1.fepl)
-carregamento1.mostre()
-carregamento1.mostre()
-carregamento1.mostre()
-print(barra1.fepl)
+print(barra2.fepl)
+#carregamento1.mostre()
+#carregamento1.mostre()
+#carregamento1.mostre()
 
 #    E = 10000.0
 #    area = 2.0 * 5.0
