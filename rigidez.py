@@ -6,13 +6,13 @@ from matplotlib.collections import LineCollection
 
 class No:
     def __init__(self, num, x, y):
-        self.num = num 
+        self.num = int(num) 
         self.x = x
         self.y = y
 
 class Barra: 
     def __init__(self, num, no1, no2,E,A,I):
-        self.num = num
+        self.num = int(num)
         self.noi = no1
         self.noj = no2
         self.E = E
@@ -20,8 +20,10 @@ class Barra:
         self.I = I
         self.L = None      
         self.kl = np.zeros((6,6))
+        self.k = np.zeros((6,6))
         self.r = np.zeros((6,6))
         self.fepl = np.zeros((6))
+        self.q = np.zeros((6),dtype=int)
 
     def comprimento_barra(self):
         dx = self.noj.x - self.noi.x
@@ -37,7 +39,7 @@ class Barra:
         a5 = (2.0*self.E*self.I)/self.L
 
         self.kl[0,0] = a1
-        self.kl[0,4] = -a1
+        self.kl[0,3] = -a1
         self.kl[1,1] = a2
         self.kl[1,2] = a3
         self.kl[1,4] = -a2
@@ -50,7 +52,7 @@ class Barra:
         self.kl[4,5] = -a3
         self.kl[5,5] = a4
 
-        self.kl[4,0] = self.kl[0,4]
+        self.kl[3,0] = self.kl[0,3]
         self.kl[2,1] = self.kl[1,2]
         self.kl[4,1] = self.kl[1,4]
         self.kl[5,1] = self.kl[1,5]
@@ -74,7 +76,41 @@ class Barra:
         self.r[3,4] = s      
         self.r[4,4] = c
         self.r[5,5] = 1 
+
+    def calcula_k(self):
+        self.k = np.linalg.inv(self.r)@ self.kl @ self.r
     
+    def calcula_q(self):
+        z = -1
+        M = np.array([self.noi.num, self.noj.num])
+        for j in range(0,2):
+            for jk in range(0,3):
+                z = z + 1
+                self.q[z] = 3*(M[j]-1)+jk
+        
+        
+        
+class Estrutura:
+    def __init__(self, barras,nnos):
+        self.barras = barras
+        self.nnos = nnos
+        self.k = np.zeros((nnos*3,nnos*3))
+        
+    def calcula_k(self):
+        for barra in self.barras:
+            barra.comprimento_barra()
+            barra.calcula_klocal()
+            barra.calcula_r()
+            barra.calcula_k()
+            barra.calcula_q()
+            
+            print(barra.k)
+            
+            for j in range(0,6):
+                for jk in range(0,6):
+                    self.k[barra.q[j], barra.q[jk]]= self.k[barra.q[j], barra.q[jk]]+barra.k[j,jk]
+        print(self.k)
+
 
 class Carregamento_distribuido: 
      
@@ -126,19 +162,37 @@ class Carregamento_pontual:
         self.barra.fepl[5] = mb    
         
 
-no1 = No(1,60.0,135.0)
-no2 = No(2,160.0,135.0)
-no3 = No(3,260.0,60.0)
+#no1 = No(1,60.0,135.0)
+#no2 = No(2,160.0,135.0)
+#no3 = No(3,260.0,60.0)
+
+no1 = No(1,0.0,75.0)
+no2 = No(2,100.0,75.0)
+no3 = No(3,200.0,0.0)
 
 barra1 = Barra(1.0,no1,no2,10000.0,2.0*5.0,1000.0)
 barra2 = Barra(2.0,no2,no3,10000.0,2.0*5.0,1000.0)
-barra1.comprimento_barra()
-barra2.comprimento_barra()
-barra1.calcula_klocal()
-barra1.calcula_klocal()
-barra1.calcula_r()
-print(barra1.kl)
-print(barra1.r)
+
+
+barras = [barra1, barra2]
+
+portico = Estrutura(barras,3)
+
+portico.calcula_k()
+
+#barra1.comprimento_barra()
+#barra1.calcula_klocal()
+#barra1.calcula_r()
+#barra1.calcula_k()
+#barra1.calcula_q()
+
+
+#print(barra1.kl)
+#print(barra1.r)
+#print(barra1.k)
+#print(barra1.q)
+
+
 carregamento1 = Carregamento_distribuido(0,100,0.24,0.24,barra1)
 carregamento2 = Carregamento_pontual(62.5,16.0,barra2)
 carregamento1.calcula_Fepl()
