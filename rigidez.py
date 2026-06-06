@@ -42,6 +42,7 @@ meu_nos = [
 
 c1 = CargaDistribuida(0, 100, 0.24, 0.24)
 c2 = CargaPontual(62.5, 16)
+grestritos = [0,1,2,6,7,8]
 
 meu_barras = [
     Barra(0,1,[c1]),
@@ -65,8 +66,8 @@ def kl(E, A, I, L):
     a4 = (4.0*E*I)/L
     a5 = (2.0*E*I)/L
 
-    kl[0,0] = a1
-    kl[0,4] = -a1
+    kl[0,0] = a1                           
+    kl[0,3] = -a1
     kl[1,1] = a2
     kl[1,2] = a3
     kl[1,4] = -a2
@@ -79,7 +80,7 @@ def kl(E, A, I, L):
     kl[4,5] = -a3
     kl[5,5] = a4
 
-    kl[4,0] = kl[0,4]
+    kl[3,0] = kl[0,4]
     kl[2,1] = kl[1,2]
     kl[4,1] = kl[1,4]
     kl[5,1] = kl[1,5]
@@ -167,6 +168,19 @@ def calcula_q(indice1, indice2): #correspondencia graus de liberdade da barra pa
 
     return q
 
+def calcula_k01(k_estrutura, grestritos):
+    k01 = k_estrutura
+    for g in grestritos:
+        for i in range (0,3*len(meu_nos)):
+            for j in range (0,3*len(meu_nos)):
+                if i == g or j == g:
+                    k01[i,j] = 0
+                if i == j and k01[i,j] == 0:
+                    k01[i,j] = 1
+
+    return k01
+
+
 def desenha_estrutura(nos, barras):
     cord_x = [] 
     cord_y = [] 
@@ -192,7 +206,8 @@ def desenha_estrutura(nos, barras):
 
 desenha_estrutura(meu_nos, meu_barras)
 
-k_estrutura = np.zeros((len(meu_nos)*3,len(meu_nos)*3))
+k_estrutura = np.zeros((len(meu_nos)*3,len(meu_nos)*3), dtype = int)
+grestritos = [0,1,2,6,7,8]
 
 for barra in meu_barras:
     no_inicio = meu_nos[barra.indice_no1] #coordenadas primeiro nó da barra
@@ -213,17 +228,23 @@ for barra in meu_barras:
             fep += calcula_fepl_pontual(carga.a, carga.P, tamanho)
     vetorq = calcula_q(barra.indice_no1, barra.indice_no2)
 
+    for j in range(0,6):
+        for jk in range(0,6):
+            k_estrutura[vetorq[j], vetorq[jk]] += K[j,jk]
     print(vetorq)
     print(fep)
     print(tamanho)
     print(K)
     print(KL)
 
-    for j in range(0,6):
-        for jk in range(0,6):
-            k_estrutura[vetorq[j], vetorq[jk]] += K[j,jk]
     
+
 print(k_estrutura)
+
+k01 = calcula_k01(k_estrutura,grestritos)
+  
+print(k01)
+
 
 
 

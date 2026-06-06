@@ -1,6 +1,6 @@
 Comandos
 
-- git init - usar para criar um novo resitório
+- git init - usar para criar um novo repositório
 
 - git status - mostra as últimas mudanças
 
@@ -13,5 +13,7 @@ Comandos
 - git diff --cached - mostra todas as mudanças que vão entrar no próximo commit (usar tecla q para sair da visualização)
 
 - git push - enviar commit para github
+
+- git switch nome-da-branch - muda de branch
 
 - ponto = diretório atual
