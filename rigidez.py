@@ -9,6 +9,12 @@ class No:
         self.num = int(num) 
         self.x = x
         self.y = y
+        self.Fx = 0.0
+        self.Fy = 0.0
+        self.Mz = 0.0
+        self.Tx = False
+        self.Ty = False
+        self.Rz = False
 
 class Barra: 
     def __init__(self, num, no1, no2,E,A,I):
@@ -92,15 +98,16 @@ class Barra:
         
         
 class Estrutura:
-    def __init__(self,barras,nnos,grestritos):
+    def __init__(self,nos,barras):
+        self.nos = nos
         self.barras = barras
-        self.nnos = nnos
-        self.grestritos = grestritos
-        self.fnos = np.zeros((nnos*3))
-        self.f01 = np.zeros((nnos*3))
-        self.k = np.zeros((nnos*3,nnos*3), dtype=int)
-        
-    def calcula_k(self):
+        self.nnos = len(nos)
+        self.fnos = np.zeros((self.nnos*3))
+        self.f01 = np.zeros((self.nnos*3))
+        self.k = np.zeros((self.nnos*3,self.nnos*3), dtype=int)
+        self.k01 = np.zeros((self.nnos*3,self.nnos*3), dtype=int)
+                
+    def monta_k(self):
         for barra in self.barras:
             barra.comprimento_barra()
             barra.calcula_klocal()
@@ -111,22 +118,45 @@ class Estrutura:
                 for jk in range(0,6):
                     self.k[barra.q[j], barra.q[jk]] = self.k[barra.q[j], barra.q[jk]]+barra.k[j,jk]
 
-        print(self.k)
+        #print(self.k)
 
-    def calcula_k01(self):
-        k01 = self.k
-
-        for g in self.grestritos:
-            for i in range (0,3*self.nnos):
-                for j in range (0,3*self.nnos):
-                    if i == g or j == g:
-                        k01[i,j] = 0
-                    if i == j and k01[i,j] == 0:
-                        k01[i,j] = 1                
-
-        print(k01)       
-
-
+    def monta_k01(self):
+        self.k01 = self.k
+        for no in self.nos:
+            if no.Tx == True:
+                gdl = 3*no.num-3
+                self.k01[gdl, :] = 0.0
+                self.k01[:,gdl] = 0.0
+                self.k01[gdl,gdl] = 1.0
+            if no.Ty == True:
+                gdl = 3*no.num-2
+                self.k01[gdl, :] = 0.0
+                self.k01[:,gdl] = 0.0
+                self.k01[gdl,gdl] = 1.0               
+            if no.Rz == True:
+                gdl = 3*no.num-1
+                self.k01[gdl, :] = 0.0
+                self.k01[:,gdl] = 0.0
+                self. k01[gdl,gdl] = 1.0           
+        
+    def monta_fnos(self):    
+        for no in self.nos:
+            self.fnos[3*no.num-3] = no.Fx
+            self.fnos[3*no.num-2] = no.Fy
+            self.fnos[3*no.num-1] = no.Mz 
+            
+        for barra in self.barras:
+             for j in range(0,6):
+                self.fnos[barra.q[j]] += -barra.fep[j]
+                
+    def aplica_cc_fnos(self):
+        for no in self.nos:
+            if no.Tx == True:
+                self.fnos[3*no.num-3] = 0
+            if no.Ty == True:
+                self.fnos[3*no.num-2] = 0
+            if no.Rz == True:
+                 self.fnos[3*no.num-1] = 0                                                
 class Carregamento_distribuido: 
      
     def __init__(self, a, lw, w1, w2, barra):
@@ -195,77 +225,68 @@ class Carregamento_pontual:
     def calcula_fep(self):
         self.barra.fep = np.linalg.inv(self.barra.r)@ self.barra.fepl
 
-class Forcas_nodais:
-    '''
-        fnos: lista de tuplas com modulo do carregamento no nó
-        e grau de liberdade correspondente
-
-    '''
-
-    def __init__(self,estrutura,barras,fnos,grestritos):
-        self.nnos = estrutura.nnos
-        self.fnos = fnos
-        self.grestritos = grestritos
-        self.estrutura = estrutura
-        self.barras = barras
-
-    def calcula_fnos(self):
-        for f in self.fnos:
-            self.estrutura.fnos[f[1]] = f[0]
-        for barra in self.barras:
-            barra.calcula_q()
-            for i in range(0,6):
-                self.estrutura.fnos[barra.q[i]] += barra.fep[i]
-
-        print(self.estrutura.fnos)
-
-    def calcula_f01(self):
-        f01 = self.estrutura.fnos
-        for g in self.grestritos:
-            for i in range(0,self.nnos*3):
-                if g == i:
-                    f01[i] = 0
-
-        print(f01)
 
 
-
-#no1 = No(1,60.0,135.0)
-#no2 = No(2,160.0,135.0)
-#no3 = No(3,260.0,60.0)
-
+# Definição dos nós
 no1 = No(1,0.0,75.0)
 no2 = No(2,100.0,75.0)
 no3 = No(3,200.0,0.0)
+nos = [no1, no2, no3]
 
+# Aplicação das cargas nodais
+no2.Fy = -10
+no2.Mz = -1000
+
+# Aplicação das restrições nodais
+no1.Tx = True
+no1.Ty = True
+no1.Rz = True
+no3.Tx = True
+no3.Ty = True
+no3.Rz = True
+
+# Definição das barras e propriedades
 barra1 = Barra(1.0,no1,no2,10000.0,2.0*5.0,1000.0)
 barra2 = Barra(2.0,no2,no3,10000.0,2.0*5.0,1000.0)
+barras = [barra1, barra2]
 
+# Definição dos carregamentos nas barras
 carregamento1 = Carregamento_distribuido(0,100,0.24,0.24,barra1)
 carregamento2 = Carregamento_pontual(62.5,12.0,16.0,barra2)
 
+# Definição da estrutura
+portico = Estrutura(nos,barras,grestritos)
 
-barras = [barra1, barra2]
-grestritos = [0,1,2,6,7,8]
-fnodais = [(10,4),(1000,5)]
+# Monta matriz de rigidez global
+portico.monta_k()
+print(portico.k)
 
-portico = Estrutura(barras,3,grestritos)
-forcas_nos = Forcas_nodais(portico,barras,fnodais,grestritos)
-portico.calcula_k()
-portico.calcula_k01()
+# Monta matriz de rigidez global com as condições de contorno
+portico.monta_k01()
+print(portico.k01)
 
+# Calcula as forças de engastamento perfeito
 carregamento1.calcula_fepl()
 carregamento1.calcula_fep()
 carregamento2.calcula_fepl()
 carregamento2.calcula_fep()
 
-forcas_nos.calcula_fnos()
-forcas_nos.calcula_f01()
+# Monta vetor de cargas nodais global
+portico.monta_fnos()
 
-print(barra1.fepl)
-print(barra2.fepl)
-print(barra1.fep)
-print(barra2.fep)
+# Aplica condições de contorno no vetor de cargas nodais global
+portico.aplica_cc_fnos()
+
+
+print(portico.fnos)
+
+#forcas_nos.calcula_fnos()
+#forcas_nos.calcula_f01()
+
+#print(barra1.fepl)
+#print(barra2.fepl)
+##print(barra1.fep)
+#rint(barra2.fep)
 
 
 #barra1.comprimento_barra()
