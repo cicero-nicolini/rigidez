@@ -5,9 +5,10 @@ from matplotlib.collections import LineCollection
 
 
 class No:
-    def __init__(self, x, y):
+    def __init__(self, x, y, apoio = False):
         self.x = x
         self.y = y
+        self.apoio = apoio
 
 class Barra: 
     def __init__(self, no1, no2, cargas=[]):
@@ -29,20 +30,20 @@ class CargaDistribuida:
         self.w2 = w2
 
 class CargaPontual: 
-    def __init__(self, a, P):
+    def __init__(self, a, Px, Py):
         self.a = a
-        self.P = P
+        self.Px = Px
+        self.Py = Py
 
 meu_nos = [
-    No(60,135),
+    No(60,135,True),
     No(160,135),
-    No(260,60),
+    No(260,60,True),
     #No(20,20),
 ]
 
 c1 = CargaDistribuida(0, 100, 0.24, 0.24)
-c2 = CargaPontual(62.5, 16)
-grestritos = [0,1,2,6,7,8]
+c2 = CargaPontual(62.5, 12, 16)
 
 meu_barras = [
     Barra(0,1,[c1]),
@@ -57,7 +58,7 @@ def comprimento_barra(no1, no2): #argamentos são coordenadas dos nós
 
     return math.sqrt( dx * dx + dy * dy )
 
-def kl(E, A, I, L):
+def matriz_barra_local(E, A, I, L):
     kl = np.zeros((6,6))
 
     a1 = E*A/L
@@ -90,7 +91,7 @@ def kl(E, A, I, L):
 
     return kl
 
-def r(no1, no2): #argamentos são coordenadas dos nós
+def matriz_rotacao(no1, no2): #argamentos são coordenadas dos nós
     r = np.zeros((6,6))
 
     dx = no2.x - no1.x
@@ -136,8 +137,7 @@ def calcula_fepl_distribuido(a, lw, w1, w2, L):
 
     return fepl
 
-def calcula_fepl_pontual(a, P, L):
-
+def calcula_fepl_pontual(a, Px, Py, L):
     fepl = np.zeros((6))
 
     b = L - a
@@ -145,13 +145,17 @@ def calcula_fepl_pontual(a, P, L):
     sa = L + 2*a
     sb = L + 2*b
 
-    ra = (P*b*b*sa)/(L**3)
-    rb = (P*a*a*sb)/(L**3)
-    ma = (P*a*b*b)/(L*L)
-    mb = -(P*a*a*b)/(L*L)
+    ha = -(Px*b*b*sa)/(L**3)
+    hb = -(Px*a*a*sb)/(L**3)
+    ra = (Py*b*b*sa)/(L**3)
+    rb = (Py*a*a*sb)/(L**3)
+    ma = (Py*a*b*b)/(L*L)
+    mb = -(Py*a*a*b)/(L*L)
 
+    fepl[0] = ha
     fepl[1] = ra
     fepl[2] = ma
+    fepl[3] = hb
     fepl[4] = rb
     fepl[5] = mb
 
@@ -168,17 +172,12 @@ def calcula_q(indice1, indice2): #correspondencia graus de liberdade da barra pa
 
     return q
 
-def calcula_k01(k_estrutura, grestritos):
-    k01 = k_estrutura
-    for g in grestritos:
-        for i in range (0,3*len(meu_nos)):
-            for j in range (0,3*len(meu_nos)):
-                if i == g or j == g:
-                    k01[i,j] = 0
-                if i == j and k01[i,j] == 0:
-                    k01[i,j] = 1
-
-    return k01
+def remove_grau_liberdade(k_estrutura, grau_liberdade):
+    tamanho = k_estrutura.shape[0]
+    for i in range(tamanho):
+        k_estrutura[grau_liberdade, i] = 0.0
+        k_estrutura[i, grau_liberdade] = 0.0
+    k_estrutura[grau_liberdade,grau_liberdade] = 1.0
 
 
 def desenha_estrutura(nos, barras):
@@ -205,46 +204,61 @@ def desenha_estrutura(nos, barras):
     plt.show()
 
 desenha_estrutura(meu_nos, meu_barras)
-
-k_estrutura = np.zeros((len(meu_nos)*3,len(meu_nos)*3), dtype = int)
-grestritos = [0,1,2,6,7,8]
+dimensao = len(meu_nos)*3
+k_estrutura = np.zeros((dimensao, dimensao))
+forcas = np.zeros(dimensao)
+graus_restritos = []
 
 for barra in meu_barras:
     no_inicio = meu_nos[barra.indice_no1] #coordenadas primeiro nó da barra
     no_fim = meu_nos[barra.indice_no2] #coordenadas segundo nó da barra
-    R = r(no_inicio, no_fim)
-    R_T = np.linalg.inv(R)   
+    R = matriz_rotacao(no_inicio, no_fim)
+    R_T = R.T  
     E = 10000.0
     area = 2.0 * 5.0
     inercia = 1000.0
     tamanho = comprimento_barra(no_inicio, no_fim)
-    KL = kl(E, area, inercia, tamanho)
+    KL = matriz_barra_local(E, area, inercia, tamanho)
     K = R_T @ KL @ R
+
+    vetorq = calcula_q(barra.indice_no1, barra.indice_no2)
+    
+    if no_inicio.apoio:
+        graus_restritos.append(vetorq[0])
+        graus_restritos.append(vetorq[1])
+        graus_restritos.append(vetorq[2])
+    if no_fim.apoio:
+        graus_restritos.append(vetorq[3])
+        graus_restritos.append(vetorq[4])
+        graus_restritos.append(vetorq[5])
+    
     fep = np.zeros((6))
     for carga in barra.cargas:
         if isinstance(carga, CargaDistribuida):
             fep += calcula_fepl_distribuido(carga.a, carga.lw, carga.w1, carga.w2, tamanho)
         else:
-            fep += calcula_fepl_pontual(carga.a, carga.P, tamanho)
-    vetorq = calcula_q(barra.indice_no1, barra.indice_no2)
+            fep += calcula_fepl_pontual(carga.a, carga.Px, carga.Py, tamanho)
+    fep = R_T @ fep
+    print(fep)
+    for i in range(len(fep)):
+        forcas[vetorq[i]] = fep[i]
 
     for j in range(0,6):
         for jk in range(0,6):
             k_estrutura[vetorq[j], vetorq[jk]] += K[j,jk]
-    print(vetorq)
-    print(fep)
-    print(tamanho)
-    print(K)
-    print(KL)
 
-    
+
+for grau in graus_restritos:
+    remove_grau_liberdade(k_estrutura, grau)
+    forcas[grau] = 0.0
+
 
 print(k_estrutura)
+print(forcas)
 
-k01 = calcula_k01(k_estrutura,grestritos)
+deslocamentos = np.linalg.solve(k_estrutura, forcas)
+print(deslocamentos)
   
-print(k01)
-
 
 
 
