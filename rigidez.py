@@ -35,6 +35,63 @@ class CargaPontual:
         self.Px = Px
         self.Py = Py
 
+class Estrutura:
+    def __init__(self, nos, barras):
+        self.nos = nos
+        self.barras = barras
+
+    def matriz_estrutura(self):
+        dimensao = len(self.nos)*3
+        k_estrutura = np.zeros((dimensao, dimensao))
+        forcas = np.zeros(dimensao)
+
+        for barra in self.barras:
+            K = self.matriz_barra(barra)
+            corresp = self.vetor_correspondencia(barra)
+            
+            for i in range(0,6):
+                for j in range(0,6):
+                    k_estrutura[corresp[i], corresp[j]] += K[i,j]
+
+            fep = self.forcas_barra(barra)
+            for i in range(len(fep)):
+                forcas[corresp[i]] = fep[i]
+
+        return k_estrutura, forcas
+
+
+    def matriz_barra(self, barra):
+        no_inicio = self.nos[barra.indice_no1] #coordenadas primeiro nó da barra
+        no_fim = self.nos[barra.indice_no2] #coordenadas segundo nó da barra
+        R = matriz_rotacao(no_inicio, no_fim)
+        R_T = R.T  
+        '''
+        E = 10000.0
+        area = 2.0 * 5.0
+        inercia = 1000.0
+        '''
+        tamanho = comprimento_barra(no_inicio, no_fim)
+        KL = matriz_barra_local(E, area, inercia, tamanho)
+
+        return R_T @ KL @ R
+
+    def forcas_barra(self, barra):
+        no_inicio = self.nos[barra.indice_no1] #coordenadas primeiro nó da barra
+        no_fim = self.nos[barra.indice_no2] #coordenadas segundo nó da barra
+        R = matriz_rotacao(no_inicio, no_fim)
+        R_T = R.T  
+        fep = np.zeros((6))
+        for carga in barra.cargas:
+            if isinstance(carga, CargaDistribuida):
+                fep += calcula_fepl_distribuido(carga.a, carga.lw, carga.w1, carga.w2, tamanho)
+            else:
+                fep += calcula_fepl_pontual(carga.a, carga.Px, carga.Py, tamanho)
+        return R_T @ fep
+
+
+
+####################################################################
+
 meu_nos = [
     No(60,135,True),
     No(160,135),
@@ -52,7 +109,7 @@ meu_barras = [
     #Barra(0,2),
 ]
 
-def comprimento_barra(no1, no2): #argamentos são coordenadas dos nós
+def comprimento_barra(no1, no2): #argumentos são coordenadas dos nós
     dx = no2.x - no1.x
     dy = no2.y - no1.y
 
@@ -161,16 +218,15 @@ def calcula_fepl_pontual(a, Px, Py, L):
 
     return fepl
 
-def calcula_q(indice1, indice2): #correspondencia graus de liberdade da barra para estrutura
-    q = [0]*6
-    z = 0
-    M = np.array([indice1, indice2])
-    for j in range(0,2):
-        for jk in range(0,3):
-            q[z] = 3*(M[j])+jk
-            z += 1
-
-    return q
+def vetor_correspondencia(indice1, indice2): #correspondencia graus de liberdade da barra para estrutura
+    return [
+        indice1 * 3 + 0, 
+        indice1 * 3 + 1, 
+        indice1 * 3 + 2, 
+        indice2 * 3 + 0, 
+        indice2 * 3 + 1, 
+        indice2 * 3 + 2, 
+    ]
 
 def remove_grau_liberdade(k_estrutura, grau_liberdade):
     tamanho = k_estrutura.shape[0]
@@ -221,7 +277,7 @@ for barra in meu_barras:
     KL = matriz_barra_local(E, area, inercia, tamanho)
     K = R_T @ KL @ R
 
-    vetorq = calcula_q(barra.indice_no1, barra.indice_no2)
+    vetorq = vetor_correspondencia(barra.indice_no1, barra.indice_no2)
     
     if no_inicio.apoio:
         graus_restritos.append(vetorq[0])
