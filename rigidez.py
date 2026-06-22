@@ -30,7 +30,11 @@ class Barra:
         self.r = np.zeros((6,6))
         self.fepl = np.zeros((6))
         self.fep = np.zeros((6))
+        self.f = np.zeros((6))
+        self.fl = np.zeros((6))
+        self.u = np.zeros((6))
         self.q = np.zeros((6),dtype=int)
+        
 
     def comprimento_barra(self):
         dx = self.noj.x - self.noi.x
@@ -65,7 +69,7 @@ class Barra:
         self.kl[5,1] = self.kl[1,5]
         self.kl[4,2] = self.kl[2,4]
         self.kl[5,2] = self.kl[2,5]
-        self.kl[5,4] = self.kl[4,5]        
+        self.kl[5,4] = self.kl[4,5]
 
     def calcula_r(self): 
         dx = self.noj.x - self.noi.x
@@ -86,7 +90,7 @@ class Barra:
 
     def calcula_k(self):
         self.k = np.linalg.inv(self.r)@ self.kl @ self.r
-    
+
     def calcula_q(self):
         z = -1
         M = np.array([self.noi.num, self.noj.num])
@@ -94,19 +98,19 @@ class Barra:
             for jk in range(0,3):
                 z = z + 1
                 self.q[z] = 3*(M[j]-1)+jk
-        
-        
-        
+      
 class Estrutura:
     def __init__(self,nos,barras):
         self.nos = nos
         self.barras = barras
         self.nnos = len(nos)
         self.fnos = np.zeros((self.nnos*3))
-        self.f01 = np.zeros((self.nnos*3))
+        self.f = np.zeros((self.nnos*3))
+        self.u = np.zeros((self.nnos*3))
         self.k = np.zeros((self.nnos*3,self.nnos*3), dtype=int)
         self.k01 = np.zeros((self.nnos*3,self.nnos*3), dtype=int)
-                
+        self.R = np.zeros((self.nnos*3))
+              
     def monta_k(self):
         for barra in self.barras:
             barra.comprimento_barra()
@@ -116,9 +120,7 @@ class Estrutura:
             barra.calcula_q()
             for j in range(0,6):
                 for jk in range(0,6):
-                    self.k[barra.q[j], barra.q[jk]] = self.k[barra.q[j], barra.q[jk]]+barra.k[j,jk]
-
-        #print(self.k)
+                    self.k[barra.q[j], barra.q[jk]] += barra.k[j,jk]
 
     def monta_k01(self):
         self.k01 = self.k
@@ -137,7 +139,7 @@ class Estrutura:
                 gdl = 3*no.num-1
                 self.k01[gdl, :] = 0.0
                 self.k01[:,gdl] = 0.0
-                self. k01[gdl,gdl] = 1.0           
+                self.k01[gdl,gdl] = 1.0           
         
     def monta_fnos(self):    
         for no in self.nos:
@@ -146,7 +148,7 @@ class Estrutura:
             self.fnos[3*no.num-1] = no.Mz 
             
         for barra in self.barras:
-             for j in range(0,6):
+            for j in range(0,6):
                 self.fnos[barra.q[j]] += -barra.fep[j]
                 
     def aplica_cc_fnos(self):
@@ -156,7 +158,49 @@ class Estrutura:
             if no.Ty == True:
                 self.fnos[3*no.num-2] = 0
             if no.Rz == True:
-                 self.fnos[3*no.num-1] = 0                                                
+                self.fnos[3*no.num-1] = 0
+
+    def calcula_deslocamentos(self):
+        self.u = np.linalg.inv(self.k01)@ self.fnos
+
+    def calcula_reacoes(self):      
+        for barra in self.barras:
+            barra.calcula_q()
+            barra.calcula_r()
+            
+            #Monta u para as barras
+            for i in range(0,6):
+                barra.u[i] = self.u[barra.q[i]]
+            
+            #Calcula vetor f para as barras       
+            barra.f = barra.k @ barra.u + barra.fep
+            
+            #Calcula vetor f no sistema local para as barras        
+            barra.fl = barra.r @ barra.f
+
+            #Aplica forças nos nós do vetor f e rotaciona para o sistema local
+
+            barra.f[0] += barra.noi.Fx
+            barra.f[1] += barra.noi.Fy
+            barra.f[2] += barra.noi.Mz
+            barra.f[3] += barra.noj.Fx
+            barra.f[4] += barra.noj.Fy
+            barra.f[5] += barra.noj.Mz
+
+            #barra.f = barra.r @ barra.f
+
+            #Monta vetor de reações da estrutura c/ zeros nos gdl sem apoio
+            for j in range(0,6):               
+                self.R[barra.q[j]] += barra.f[j]
+
+            for no in self.nos:
+                if no.Tx == False:
+                    self.R[3*no.num-3] = 0
+                if no.Ty == False:
+                    self.R[3*no.num-2] = 0
+                if no.Rz == False:
+                    self.R[3*no.num-1] = 0
+
 class Carregamento_distribuido: 
      
     def __init__(self, a, lw, w1, w2, barra):
@@ -226,7 +270,7 @@ class Carregamento_pontual:
         self.barra.fep = np.linalg.inv(self.barra.r)@ self.barra.fepl
 
 
-
+# Teste exemplo 1
 # Definição dos nós
 no1 = No(1,0.0,75.0)
 no2 = No(2,100.0,75.0)
@@ -255,15 +299,15 @@ carregamento1 = Carregamento_distribuido(0,100,0.24,0.24,barra1)
 carregamento2 = Carregamento_pontual(62.5,12.0,16.0,barra2)
 
 # Definição da estrutura
-portico = Estrutura(nos,barras,grestritos)
+portico = Estrutura(nos,barras)
 
 # Monta matriz de rigidez global
 portico.monta_k()
+print("k")
 print(portico.k)
 
 # Monta matriz de rigidez global com as condições de contorno
 portico.monta_k01()
-print(portico.k01)
 
 # Calcula as forças de engastamento perfeito
 carregamento1.calcula_fepl()
@@ -276,39 +320,152 @@ portico.monta_fnos()
 
 # Aplica condições de contorno no vetor de cargas nodais global
 portico.aplica_cc_fnos()
-
-
+print("f01")
 print(portico.fnos)
 
-#forcas_nos.calcula_fnos()
-#forcas_nos.calcula_f01()
+# Calcula vetor de deslocamento da estrutura
+portico.calcula_deslocamentos()
+print("deslocamentos")
+print(portico.u)
 
-#print(barra1.fepl)
-#print(barra2.fepl)
-##print(barra1.fep)
-#rint(barra2.fep)
+# Calcula vetor de reações da estrutura sistema local
+portico.calcula_reacoes()
+print("reacoes")
+print(portico.R)
+
+# Teste exemplo 11
+# Definição dos nós
+no1 = No(1,0.0,0.0)
+no2 = No(2,100.0,0.0)
+no3 = No(3,200.0,50.0)
+no4 = No(4,0.0,100.0)
+no5 = No(5,100.0,100.0)
+no6 = No(6,200.0,100.0)
+nos = [no1, no2, no3, no4, no5, no6]
+
+# Aplicação das cargas nodais
+no4.Fy = -2
+no4.Mz = -5
+no6.Fy = -2
+no6.Mz = -5
+
+# Aplicação das restrições nodais
+no1.Tx = True
+no1.Ty = True
+no1.Rz = True
+no2.Tx = True
+no2.Ty = True
+no2.Rz = True
+no3.Tx = True
+no3.Ty = True
+no3.Rz = True
+
+# Definição das barras e propriedades
+barra1 = Barra(1.0,no1,no4,2.5e2,200.0,6670.0)
+barra2 = Barra(2.0,no2,no5,2.5e2,200.0,6670.0)
+barra3 = Barra(3.0,no3,no6,2.5e2,200.0,6670.0)
+barra4 = Barra(4.0,no4,no5,2.5e2,200.0,6670.0)
+barra5 = Barra(5.0,no5,no6,2.5e2,200.0,6670.0)
+barras = [barra1, barra2, barra3, barra4, barra5]
+
+# Definição dos carregamentos nas barras
+carregamento1 = Carregamento_distribuido(0,100,0.1,0.1,barra4)
+
+# Definição da estrutura
+portico = Estrutura(nos,barras)
+
+# Monta matriz de rigidez global
+print("k")
+portico.monta_k()
+print(portico.k)
+
+# Monta matriz de rigidez global com as condições de contorno
+portico.monta_k01()
+
+# Calcula as forças de engastamento perfeito
+carregamento1.calcula_fepl()
+carregamento1.calcula_fep()
+
+# Monta vetor de cargas nodais global
+portico.monta_fnos()
+
+# Aplica condições de contorno no vetor de cargas nodais global
+print("f01")
+portico.aplica_cc_fnos()
+print(portico.fnos)
+
+# Calcula vetor de deslocamento da estrutura
+print("deslocamentos")
+portico.calcula_deslocamentos()
+print(portico.u)
+
+# Calcula vetor de reações da estrutura sistema local
+print("reacoes")
+portico.calcula_reacoes()
+print(portico.R)
+
+# Teste exemplo 12
+# Definição dos nós
+no1 = No(1,0.0,0.0)
+no2 = No(2,0.0,4.0)
+no3 = No(3,6.0,4.0)
+no4 = No(4,6.0,1.0)
+nos = [no1, no2, no3, no4]
+
+# Aplicação das cargas nodais
+no3.Fx = 40
+
+# Aplicação das restrições nodais
+no1.Tx = True
+no1.Ty = True
+no4.Ty = True
+
+# Definição das barras e propriedades
+barra1 = Barra(1.0,no1,no2,2.5e7,1.34e-2,2.92e-4)
+barra2 = Barra(2.0,no2,no3,2.5e7,1.34e-2,2.92e-4)
+barra3 = Barra(3.0,no3,no4,2.5e7,1.34e-2,2.92e-4)
+barras = [barra1, barra2, barra3]
+
+# Definição dos carregamentos nas barras
+carregamento1 = Carregamento_distribuido(0,4,10.0,10.0,barra1)
+
+# Definição da estrutura
+portico = Estrutura(nos,barras)
+
+# Monta matriz de rigidez global
+print("k")
+portico.monta_k()
+print(portico.k)
+
+# Monta matriz de rigidez global com as condições de contorno
+portico.monta_k01()
+
+# Calcula as forças de engastamento perfeito
+carregamento1.calcula_fepl()
+carregamento1.calcula_fep()
+
+# Monta vetor de cargas nodais global
+portico.monta_fnos()
+
+# Aplica condições de contorno no vetor de cargas nodais global
+print("f01")
+portico.aplica_cc_fnos()
+print(portico.fnos)
+
+# Calcula vetor de deslocamento da estrutura
+print("deslocamentos")
+portico.calcula_deslocamentos()
+print(portico.u)
+
+# Calcula vetor de reações da estrutura sistema local
+print("reacoes")
+portico.calcula_reacoes()
+print(portico.R)
 
 
-#barra1.comprimento_barra()
-#barra1.calcula_klocal()
-#barra1.calcula_r()
-#barra1.calcula_k()
-#barra1.calcula_q()
 
 
-#print(barra1.kl)
-#print(barra1.r)
-#print(barra1.k)
-#print(barra1.q)
 
-
-#carregamento1.mostre()
-#carregamento1.mostre()
-#carregamento1.mostre()
-
-#    E = 10000.0
-#    area = 2.0 * 5.0
-#    inercia = 1000.0
 
 
 
