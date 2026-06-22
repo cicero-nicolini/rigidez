@@ -269,8 +269,10 @@ class Carregamento_pontual:
     def calcula_fep(self):
         self.barra.fep = np.linalg.inv(self.barra.r)@ self.barra.fepl
 
-
+#########################################################################
 # Teste exemplo 1
+#########################################################################
+
 # Definição dos nós
 no1 = No(1,0.0,75.0)
 no2 = No(2,100.0,75.0)
@@ -280,6 +282,7 @@ nos = [no1, no2, no3]
 # Aplicação das cargas nodais
 no2.Fy = -10
 no2.Mz = -1000
+no3.Fy = -20
 
 # Aplicação das restrições nodais
 no1.Tx = True
@@ -333,7 +336,15 @@ portico.calcula_reacoes()
 print("reacoes")
 print(portico.R)
 
+# Solicitações internos nos nós da barra 1
+print("solicitacoes barra1")
+print(barra2.fl)
+
+#########################################################################
 # Teste exemplo 11
+#########################################################################
+
+
 # Definição dos nós
 no1 = No(1,0.0,0.0)
 no2 = No(2,100.0,0.0)
@@ -404,7 +415,10 @@ print("reacoes")
 portico.calcula_reacoes()
 print(portico.R)
 
+#########################################################################
 # Teste exemplo 12
+#########################################################################
+
 # Definição dos nós
 no1 = No(1,0.0,0.0)
 no2 = No(2,0.0,4.0)
