@@ -163,7 +163,7 @@ class Estrutura:
     def calcula_deslocamentos(self):
         self.u = np.linalg.inv(self.k01)@ self.fnos
 
-    def calcula_reacoes(self):      
+    def calcula_solicitacoes_internas_nodais(self):      
         for barra in self.barras:
             barra.calcula_q()
             barra.calcula_r()
@@ -175,31 +175,40 @@ class Estrutura:
             #Calcula vetor f para as barras       
             barra.f = barra.k @ barra.u + barra.fep
             
-            #Calcula vetor f no sistema local para as barras        
+            #Calcula vetor f no sistema local para as barras = solicitacoes       
             barra.fl = barra.r @ barra.f
 
-            #Aplica forças nos nós do vetor f e rotaciona para o sistema local
+    def calcula_reacoes(self):
+        for barra in self.barras:
+            barra.calcula_q()
 
-            barra.f[0] += barra.noi.Fx
-            barra.f[1] += barra.noi.Fy
-            barra.f[2] += barra.noi.Mz
-            barra.f[3] += barra.noj.Fx
-            barra.f[4] += barra.noj.Fy
-            barra.f[5] += barra.noj.Mz
+            #Monta u para as barras
+            for i in range(0,6):
+                barra.u[i] = self.u[barra.q[i]]
+            
+            #Calcula vetor f para as barras       
+            barra.f = barra.k @ barra.u + barra.fep
 
-            #barra.f = barra.r @ barra.f
+            barra.f[0] += -barra.noi.Fx
+            barra.f[1] += -barra.noi.Fy
+            barra.f[2] += -barra.noi.Mz
+            barra.f[3] += -barra.noj.Fx
+            barra.f[4] += -barra.noj.Fy
+            barra.f[5] += -barra.noj.Mz
 
-            #Monta vetor de reações da estrutura c/ zeros nos gdl sem apoio
-            for j in range(0,6):               
-                self.R[barra.q[j]] += barra.f[j]
+            if barra.noi.Tx == True:
+                self.R[3*barra.noi.num-3] = barra.f[0]
+            if barra.noi.Ty == True:
+                self.R[3*barra.noi.num-2] = barra.f[1]
+            if barra.noi.Rz == True:
+                self.R[3*barra.noi.num-1] = barra.f[2]
 
-            for no in self.nos:
-                if no.Tx == False:
-                    self.R[3*no.num-3] = 0
-                if no.Ty == False:
-                    self.R[3*no.num-2] = 0
-                if no.Rz == False:
-                    self.R[3*no.num-1] = 0
+            if barra.noj.Tx == True:
+                self.R[3*barra.noj.num-3] = barra.f[3]
+            if barra.noj.Ty == True:
+                self.R[3*barra.noj.num-2] = barra.f[4]
+            if barra.noj.Rz == True:
+                self.R[3*barra.noj.num-1] = barra.f[5]
 
 class Carregamento_distribuido: 
      
@@ -270,7 +279,10 @@ class Carregamento_pontual:
         self.barra.fep = np.linalg.inv(self.barra.r)@ self.barra.fepl
 
 
-# Teste exemplo 1
+print("#########################################################################################################")
+
+print("Teste Exemplo 1 (c/carga nó 3 ftool)")
+
 # Definição dos nós
 no1 = No(1,0.0,75.0)
 no2 = No(2,100.0,75.0)
@@ -280,6 +292,7 @@ nos = [no1, no2, no3]
 # Aplicação das cargas nodais
 no2.Fy = -10
 no2.Mz = -1000
+no3.Fy = -20
 
 # Aplicação das restrições nodais
 no1.Tx = True
@@ -328,12 +341,22 @@ portico.calcula_deslocamentos()
 print("deslocamentos")
 print(portico.u)
 
-# Calcula vetor de reações da estrutura sistema local
+portico.calcula_solicitacoes_internas_nodais()
+print("solicitacoes")
+print(barra1.fl)
+print(barra2.fl)
+
+# Calcula vetor de reações da estrutura
 portico.calcula_reacoes()
 print("reacoes")
 print(portico.R)
 
-# Teste exemplo 11
+
+
+print("#########################################################################################################")
+
+print("Teste Exemplo 11")
+
 # Definição dos nós
 no1 = No(1,0.0,0.0)
 no2 = No(2,100.0,0.0)
@@ -399,12 +422,25 @@ print("deslocamentos")
 portico.calcula_deslocamentos()
 print(portico.u)
 
-# Calcula vetor de reações da estrutura sistema local
+portico.calcula_solicitacoes_internas_nodais()
+print("solicitacoes")
+print(barra1.fl)
+print(barra2.fl)
+print(barra3.fl)
+print(barra4.fl)
+print(barra5.fl)
+
+# Calcula vetor de reações da estrutura
 print("reacoes")
 portico.calcula_reacoes()
 print(portico.R)
 
-# Teste exemplo 12
+
+
+print("#########################################################################################################")
+
+print("Teste Exemplo 12")
+
 # Definição dos nós
 no1 = No(1,0.0,0.0)
 no2 = No(2,0.0,4.0)
@@ -457,7 +493,13 @@ print("deslocamentos")
 portico.calcula_deslocamentos()
 print(portico.u)
 
-# Calcula vetor de reações da estrutura sistema local
+portico.calcula_solicitacoes_internas_nodais()
+print("solicitacoes")
+print(barra1.fl)
+print(barra2.fl)
+print(barra3.fl)
+
+# Calcula vetor de reações da estrutura
 print("reacoes")
 portico.calcula_reacoes()
 print(portico.R)
