@@ -236,7 +236,6 @@ class Carregamento_distribuido:
         self.barra.fepl[2] += ma
         self.barra.fepl[4] += rb
         self.barra.fepl[5] += mb
-        #self.barra.fepl[0] = self.barra.fepl[0]+ 1
 
     def calcula_fep(self):
         self.barra.fep = np.linalg.inv(self.barra.r)@ self.barra.fepl
@@ -245,7 +244,7 @@ class Carregamento_pontual:
 
     '''
         Py: componente y da força
-        Px componente x da força
+        Px: componente x da força
 
     ''' 
      
@@ -277,6 +276,126 @@ class Carregamento_pontual:
 
     def calcula_fep(self):
         self.barra.fep = np.linalg.inv(self.barra.r)@ self.barra.fepl
+
+class Modelo:
+
+    def __init__(self, bw, h, l, lf, a, b, c, ap1, ap2, P, w):
+
+        """
+        Inicializa o modelo estrutural
+
+        Argumentos:
+
+        bw: largura viga
+        h: altura da viga
+        l: comprimento da viga
+        lf: comprimento até centro da abertura
+        a: altura da abertura
+        b: largura da abertura
+        c: altura do banzo inferior na regiao da abertura
+        ap1: largura pilar esquerdo
+        ap2: largura pilar direito
+        P: carregamento pontual
+        w: modulo carregamento distribuido
+
+        """
+
+        self.bw = bw
+        self.h = h
+        self.l = l
+        self.lf = lf
+        self.a = a
+        self.b = b
+        self.c = c
+        self.ap1 = ap1
+        self.ap2 = ap2
+        self.no = No
+        self.barra = Barra
+
+
+        """
+        Definição dos nós
+        """
+        no1 = No(1,0.0,0.0)
+        no2 = No(2,self.ap1/2,0.0)
+        no3 = No(3,self.lf-(self.b/2),0.0)
+        no4 = No(4,self.lf-(self.b/2),self.a/2)
+        no5 = No(5,self.lf-(self.b/2),-self.a/2)
+        no6 = No(6,self.lf+(self.b/2),0.0)
+        no7 = No(7,self.lf+(self.b/2),self.a/2)
+        no8 = No(8,self.lf+(self.b/2),-self.a/2)
+        no9 = No(9,self.l,0.0)
+        no10 = No(10,self.l+(self.ap2/2),0.0)
+        self.nos = [no1, no2, no3, no4, no5, no6, no7, no8, no9, no10]
+
+        """
+        Aplicação das restrições nodais
+        """
+        no1.Tx = True
+        no1.Ty = True
+        no1.Rz = True
+        no10.Tx = True
+        no10.Ty = True
+        no10.Rz = True
+
+        """
+        Definição das barras e propriedades
+        """
+        E = 10000.0
+        A = self.h*self.bw
+        I = self.bw*(self.h**3)/12
+
+        barra1 = Barra(1,no1,no2,E,A,I)
+        barra2 = Barra(2,no2,no3,E,A,I)
+        barra3 = Barra(3,no3,no4,E,A,I)
+        barra4 = Barra(4,no3,no5,E,A,I)
+        barra5 = Barra(5,no4,no7,E,A,I)
+        barra6 = Barra(6,no5,no8,E,A,I)
+        barra7 = Barra(7,no6,no7,E,A,I)
+        barra8 = Barra(8,no6,no8,E,A,I)
+        barra9 = Barra(9,no6,no9,E,A,I)
+        barra10 = Barra(10,no9,no10,E,A,I) 
+        self.barras = [barra1, barra2, barra3, barra4, barra5, barra6, barra7, barra8, barra9, barra10]
+        
+        """
+        Definição dos carregamentos nas barras
+        """
+        print(barra2.L)
+        carregamento1 = Carregamento_distribuido(0.0,self.l/3.0,w,0,barra2)
+        carregamento2 = Carregamento_distribuido(0.0,self.l/3.0,w,0,barra5)
+        carregamento3 = Carregamento_distribuido(0.0,self.l/3.0,w,0,barra9)
+
+        """
+        Calcula as forças de engastamento perfeito
+        """
+        carregamento1.calcula_fepl()
+        carregamento1.calcula_fep()
+        carregamento2.calcula_fepl()
+        carregamento2.calcula_fep()
+        carregamento3.calcula_fepl()
+        carregamento3.calcula_fep()
+
+
+    def resultados(self):
+        portico = Estrutura(self.nos,self.barras)
+        portico.monta_k()
+        print("k")
+        print(portico.k)
+        portico.monta_k01()
+        portico.monta_fnos()
+        portico.aplica_cc_fnos()
+        print("f01")
+        print(portico.fnos)
+        portico.calcula_deslocamentos()
+        print("deslocamentos")
+        print(portico.u)
+        portico.calcula_solicitacoes_internas_nodais()
+        print("solicitacoes")
+        print(barra1.fl)
+        portico.calcula_reacoes()
+        print("reacoes")
+        print(portico.R)
+
 
 
 print("#########################################################################################################")
@@ -507,9 +626,12 @@ print("reacoes")
 portico.calcula_reacoes()
 print(portico.R)
 
+print("#########################################################################################################")
+print("Teste Modelo")
+print("#########################################################################################################")
 
-
-
+modelo = Modelo(20.0, 40.0, 300.0, 150.0, 10.0, 20.0, 10.0, 20.0, 20.0, 0.0, 1.0)
+modelo.resultados()
 
 
 
