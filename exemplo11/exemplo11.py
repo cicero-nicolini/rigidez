@@ -46,39 +46,60 @@ carregamento1 = Carregamento_distribuido(0,100,0.1,0.1,barra4)
 portico = Estrutura(nos,barras)
 
 # Monta matriz de rigidez global
-print("k")
 portico.monta_k()
-print(portico.k)
+print("k")
+print_matriz(portico.k)
 
 # Monta matriz de rigidez global com as condições de contorno
 portico.monta_k01()
+print("k01")
+print_matriz(portico.k01)
 
 # Calcula as forças de engastamento perfeito
 carregamento1.calcula_fepl()
 carregamento1.calcula_fep()
 
+# Verificação Fep
+print("fep barra1")
+print_vetor(barra1.fep)
+print("fep barra2")
+print_vetor(barra2.fep)
+print("fep barra3")
+print_vetor(barra3.fep)
+print("fep barra4")
+print_vetor(barra4.fep)
+print("fep barra5")
+print_vetor(barra5.fep)
+
 # Monta vetor de cargas nodais global
 portico.monta_fnos()
+print("fnos")
+print_vetor(portico.fnos)
 
 # Aplica condições de contorno no vetor de cargas nodais global
 print("f01")
 portico.aplica_cc_fnos()
-print(portico.fnos)
+print_vetor(portico.fnos)
 
 # Calcula vetor de deslocamento da estrutura
 print("deslocamentos")
 portico.calcula_deslocamentos()
-print(portico.u)
+print_vetor(portico.u)
 
+# Calcula solicitacoes internas nas barras
 portico.calcula_solicitacoes_internas_nodais()
-print("solicitacoes")
-print(barra1.fl)
-print(barra2.fl)
-print(barra3.fl)
-print(barra4.fl)
-print(barra5.fl)
+print("solicitacoes barra1")
+print_vetor(barra1.fl)
+print("solicitacoes barra2")
+print_vetor(barra2.fl)
+print("solicitacoes barra3")
+print_vetor(barra3.fl)
+print("solicitacoes barra4")
+print_vetor(barra4.fl)
+print("solicitacoes barra5")
+print_vetor(barra5.fl)
 
 # Calcula vetor de reações da estrutura
 print("reacoes")
 portico.calcula_reacoes()
-print(portico.R)
+print_vetor(portico.R)

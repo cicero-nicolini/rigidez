@@ -4,7 +4,7 @@ Comandos
 
 - git status - mostra as últimas mudanças
 
-- git add - adiciona as mudanças do arquivo para o próximo commit
+- git add .- adiciona as mudanças do arquivo para o próximo commit
 
 - git log - mostra lista de commits anteriores
 
@@ -15,3 +15,5 @@ Comandos
 - git push - enviar commit para github
 
 - ponto = diretório atual
+
+- python -m exemplo1.exemplo1
