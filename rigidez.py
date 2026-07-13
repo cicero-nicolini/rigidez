@@ -418,7 +418,7 @@ class Modelo:
             lf: comprimento até centro da abertura
             a: altura da abertura
             b: largura da abertura
-            c: altura do banzo inferior na regiao da abertura
+            c: espessura do banzo inferior na regiao da abertura
             ap1: largura pilar esquerdo
             ap2: largura pilar direito
             P: carregamento pontual
@@ -485,9 +485,9 @@ class Modelo:
         """
         Definição dos carregamentos nas barras
         """
-        carregamento1 = Carregamento_distribuido(0.0,self.l/3,w,0.0,barra2)
-        carregamento2 = Carregamento_distribuido(0.0,self.l/3,w,0.0,barra5)
-        carregamento3 = Carregamento_distribuido(0.0,self.l/3,w,0.0,barra9)
+        carregamento1 = Carregamento_distribuido(0.0,self.lf-(self.b/2),w,0.0,barra2)
+        carregamento2 = Carregamento_distribuido(0.0,b,w,0.0,barra5)
+        carregamento3 = Carregamento_distribuido(0.0,self.l-self.lf+(self.b/2),w,0.0,barra9)
 
         """
         Calcula as forças de engastamento perfeito
@@ -517,8 +517,26 @@ class Modelo:
         print("deslocamentos")
         print_vetor(portico.u)
         portico.calcula_solicitacoes_internas_nodais()
-        print("solicitacoes")
+        print("solicitacoes barra1")
+        print_vetor(portico.barras[0].fl)
+        print("solicitacoes barra2")
         print_vetor(portico.barras[1].fl)
+        print("solicitacoes barra3")
+        print_vetor(portico.barras[2].fl)
+        print("solicitacoes barra4")
+        print_vetor(portico.barras[3].fl)
+        print("solicitacoes barra5")
+        print_vetor(portico.barras[4].fl)
+        print("solicitacoes barra6")
+        print_vetor(portico.barras[5].fl)
+        print("solicitacoes barra7")
+        print_vetor(portico.barras[6].fl)
+        print("solicitacoes barra8")
+        print_vetor(portico.barras[7].fl)
+        print("solicitacoes barra9")
+        print_vetor(portico.barras[8].fl)
+        print("solicitacoes barra10")
+        print_vetor(portico.barras[9].fl)
         portico.calcula_reacoes()
         print("reacoes")
         print_vetor(portico.R)
