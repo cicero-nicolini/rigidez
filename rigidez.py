@@ -441,16 +441,16 @@ class Modelo:
         """
         Definição dos nós
         """
-        no1 = No(1,0.0,0.0)
-        no2 = No(2,self.ap1/2,0.0)
-        no3 = No(3,self.lf-(self.b/2),0.0)
-        no4 = No(4,self.lf-(self.b/2),self.a/2)
-        no5 = No(5,self.lf-(self.b/2),-self.a/2)
-        no6 = No(6,self.lf+(self.b/2),0.0)
-        no7 = No(7,self.lf+(self.b/2),self.a/2)
-        no8 = No(8,self.lf+(self.b/2),-self.a/2)
-        no9 = No(9,self.l,0.0)
-        no10 = No(10,self.l+(self.ap2/2),0.0)
+        no1 = No(1, 0.0, 0.0)
+        no2 = No(2, self.ap1/2.0, 0.0)
+        no3 = No(3, self.ap1/2.0 + self.lf - self.b/2.0, 0.0)
+        no4 = No(4, self.ap1/2.0 + self.lf - self.b/2.0, -(self.h-self.c)/2.0)
+        no5 = No(5, self.ap1/2.0 + self.lf - self.b/2.0, (self.a+self.c)/2.0)
+        no6 = No(6, self.ap1/2.0 + self.lf + self.b/2.0, 0.0)
+        no7 = No(7, self.ap1/2.0 + self.lf + self.b/2.0, -(self.h-self.c)/2.0)
+        no8 = No(8, self.ap1/2.0 + self.lf + self.b/2.0, (self.a+self.c)/2.0)
+        no9 = No(9, self.ap1/2.0 + self.l, 0.0)
+        no10 = No(10, self.ap1/2.0+self.l+self.ap2/2.0, 0.0)
         self.nos = [no1, no2, no3, no4, no5, no6, no7, no8, no9, no10]
 
         """
@@ -466,29 +466,47 @@ class Modelo:
         """
         Definição das barras e propriedades
         """
-        E = 10000.0
-        A = self.h*self.bw
-        I = self.bw*(self.h**3)/12
+        E = 280000.0
+        I1 = self.bw*self.h**3/12.0
+        A1 = self.bw*self.h
 
-        barra1 = Barra(1,no1,no2,E,A,I)
-        barra2 = Barra(2,no2,no3,E,A,I)
-        barra3 = Barra(3,no3,no4,E,A,I)
-        barra4 = Barra(4,no3,no5,E,A,I)
-        barra5 = Barra(5,no4,no7,E,A,I)
-        barra6 = Barra(6,no5,no8,E,A,I)
-        barra7 = Barra(7,no6,no7,E,A,I)
-        barra8 = Barra(8,no6,no8,E,A,I)
-        barra9 = Barra(9,no6,no9,E,A,I)
-        barra10 = Barra(10,no9,no10,E,A,I) 
+        I2 = self.bw*self.c**3/12.0
+        A2 = self.bw*self.c
+
+        I3 = self.bw*(self.h-self.a-self.c)**3/12.0
+        A3 = self.bw*(self.h-self.a-self.c)
+
+        I4 = I1
+        A4 = A1
+
+        I2 = I1
+        A2 = A1
+
+        I3 = I1
+        A3 = A1
+
+        barra1 = Barra(1,no1,no2,E,A1,I1)
+        barra2 = Barra(2,no2,no3,E,A1,I1)
+        barra3 = Barra(3,no4,no5,E,A2,I2)
+        barra4 = Barra(4,no5,no8,E,A3,I3)
+        barra5 = Barra(5,no6,no9,E,A1,I1)
+        barra6 = Barra(6,no9,no10,E,A1,I1)
+        barra7 = Barra(7,no4,no3,E,A4,I4)
+        barra8 = Barra(8,no3,no5,E,A4,I4)
+        barra9 = Barra(9,no7,no6,E,A4,I4)
+        barra10 = Barra(10,no6,no8,E,A4,I4) 
         self.barras = [barra1, barra2, barra3, barra4, barra5, barra6, barra7, barra8, barra9, barra10]
         
         """
         Definição dos carregamentos nas barras
         """
-        carregamento1 = Carregamento_distribuido(0.0,self.lf-(self.b/2),w,0.0,barra2)
-        carregamento2 = Carregamento_distribuido(0.0,b,w,0.0,barra5)
-        carregamento3 = Carregamento_distribuido(0.0,self.l-self.lf+(self.b/2),w,0.0,barra9)
-
+        w = 10.0
+        carregamento1 = Carregamento_distribuido(0.0,self.lf-(self.b/2),w,w,barra2)
+        carregamento2 = Carregamento_distribuido(0.0,b,w,w,barra4)
+        carregamento3 = Carregamento_distribuido(0.0,self.l-self.lf-(self.b/2),w,w,barra5)
+        
+        no2.Fy = 0.0
+        
         """
         Calcula as forças de engastamento perfeito
         """

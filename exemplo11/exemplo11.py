@@ -1,3 +1,9 @@
+from pathlib import Path
+import sys
+
+RAIZ_PROJETO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(RAIZ_PROJETO))
+
 from rigidez import *
 
 print("#########################################################################################################")
