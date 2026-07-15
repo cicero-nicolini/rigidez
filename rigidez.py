@@ -302,8 +302,6 @@ class Estrutura:
             if no.Rz:
                 self.R[3*no.num-1] += -no.Mz
 
-
-
 class Carregamento_distribuido:
      
     def __init__(self, a:float, lw:float, w1:float, w2:float, barra:Barra):
@@ -476,14 +474,8 @@ class Modelo:
         I3 = self.bw*(self.h-self.a-self.c)**3/12.0
         A3 = self.bw*(self.h-self.a-self.c)
 
-        I4 = I1
-        A4 = A1
-
-        I2 = I1
-        A2 = A1
-
-        I3 = I1
-        A3 = A1
+        I4 = I1*1000
+        A4 = A1*1000
 
         barra1 = Barra(1,no1,no2,E,A1,I1)
         barra2 = Barra(2,no2,no3,E,A1,I1)
@@ -517,8 +509,29 @@ class Modelo:
         carregamento3.calcula_fepl()
         carregamento3.calcula_fep()
 
+        # Verificação Fep
+        print("fep barra1")
+        print_vetor(barra1.fep)
+        print("fep barra2")
+        print_vetor(barra2.fep)
+        print("fep barra3")
+        print_vetor(barra3.fep)
+        print("fep barra4")
+        print_vetor(barra4.fep)
+        print("fep barra5")
+        print_vetor(barra5.fep)
+        print("fep barra6")
+        print_vetor(barra6.fep)
+        print("fep barra7")
+        print_vetor(barra7.fep)
+        print("fep barra8")
+        print_vetor(barra8.fep)
+        print("fep barra9")
+        print_vetor(barra9.fep)
+        print("fep barra10")
+        print_vetor(barra10.fep)
 
-    def resultados(self):
+    #def resultados(self):
         """
         Define a estrutura, calcula os resultados de deslocamentos, solicitações internas e reações
         """
@@ -527,6 +540,8 @@ class Modelo:
         print("k")
         print_matriz(portico.k)
         portico.monta_k01()
+        print("k01")
+        print_matriz(portico.k01)
         portico.monta_fnos()
         portico.aplica_cc_fnos()
         print("f01")
