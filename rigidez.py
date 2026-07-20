@@ -328,6 +328,8 @@ class Carregamento_distribuido:
         """
         Calcula o vetor de forças de engastamento perfeito no sistema local da barra
         """
+
+        dx = self.barra.noj.x - self.barra.noi.x
         L = self.barra.L
         b = L - self.lw - self.a
         wm = (self.w1 + self.w2)/2.0
@@ -336,10 +338,18 @@ class Carregamento_distribuido:
         s2 = self.lw*(L*(2.0*L+self.a+b)-3.0*(self.a-b)*(self.a-b)-2.0*self.a*b)
         s3 = 120.0*self.a*b*(self.a + self.lw)+10.0*self.lw*(6.0*self.a*self.a+4.0*L*self.lw-3.0*self.lw*self.lw)
         s4 = 10.0*L*self.lw*self.lw-10.0*self.lw*self.a*(L-3.0*b)-9.0*self.lw**3
+
         rb = (self.lw*(s1 * wm + s2 * wd ))/(20.0*L**3)
         ra = self.lw*wm-rb
         mb = -(self.lw*(s3*wm+s4*wd))/(120.0*L*L)
         ma = -mb+rb*L-self.a*self.lw*wm-(self.lw*self.lw*(2.0*self.w2+self.w1))/6.0
+        
+        if dx < 0:
+            ra = -ra
+            ma = -ma
+            rb = -rb
+            mb = -mb
+
         self.barra.fepl[1] += ra
         self.barra.fepl[2] += ma
         self.barra.fepl[4] += rb
@@ -376,6 +386,8 @@ class Carregamento_pontual:
         """
         Calcula o vetor de forças de engastamento perfeito no sistema local da barra
         """
+
+        dx = self.barra.noj.x - self.barra.noi.x
         L = self.barra.L
         b = L - self.a
         sa = L + 2*self.a
@@ -388,6 +400,14 @@ class Carregamento_pontual:
         ma = (self.Py*self.a*b*b)/(L*L)
         mb = -(self.Py*self.a*self.a*b)/(L*L)
 
+        if dx < 0:
+            ha = -ha
+            ra = -ra
+            ma = -ma
+            hb = -hb
+            rb = -rb
+            mb = -mb
+
         self.barra.fepl[0] += ha
         self.barra.fepl[1] += ra
         self.barra.fepl[2] += ma
@@ -399,6 +419,7 @@ class Carregamento_pontual:
         """
         Transforma o vetor de forças de engastamento perfeito no sistema local para o global na barra
         """
+
         self.barra.fep = np.linalg.inv(self.barra.r)@ self.barra.fepl
 
 class Modelo:
@@ -432,9 +453,10 @@ class Modelo:
         self.c = c
         self.ap1 = ap1
         self.ap2 = ap2
+        self.P = P
+        self.w = w
         self.nos = None
         self.barras = None
-
 
         """
         Definição dos nós
@@ -447,8 +469,8 @@ class Modelo:
         no6 = No(6, self.ap1/2.0 + self.lf + self.b/2.0, 0.0)
         no7 = No(7, self.ap1/2.0 + self.lf + self.b/2.0, -(self.h-self.c)/2.0)
         no8 = No(8, self.ap1/2.0 + self.lf + self.b/2.0, (self.a+self.c)/2.0)
-        no9 = No(9, self.ap1/2.0 + self.l, 0.0)
-        no10 = No(10, self.ap1/2.0+self.l+self.ap2/2.0, 0.0)
+        no9 = No(9, self.ap1/2.0+ self.l, 0.0)
+        no10 = No(10, self.ap1/2.0 + self.l + self.ap2/2.0, 0.0)
         self.nos = [no1, no2, no3, no4, no5, no6, no7, no8, no9, no10]
 
         """
@@ -477,27 +499,24 @@ class Modelo:
         I4 = I1*1000
         A4 = A1*1000
 
-        barra1 = Barra(1,no1,no2,E,A1,I1)
+        barra1 = Barra(1,no2,no1,E,A1,I1)
         barra2 = Barra(2,no2,no3,E,A1,I1)
-        barra3 = Barra(3,no4,no5,E,A2,I2)
-        barra4 = Barra(4,no5,no8,E,A3,I3)
+        barra3 = Barra(3,no7,no4,E,A2,I2)
+        barra4 = Barra(4,no8,no5,E,A3,I3)
         barra5 = Barra(5,no6,no9,E,A1,I1)
         barra6 = Barra(6,no9,no10,E,A1,I1)
-        barra7 = Barra(7,no4,no3,E,A4,I4)
-        barra8 = Barra(8,no3,no5,E,A4,I4)
+        barra7 = Barra(7,no3,no4,E,A4,I4)
+        barra8 = Barra(8,no5,no3,E,A4,I4)
         barra9 = Barra(9,no7,no6,E,A4,I4)
-        barra10 = Barra(10,no6,no8,E,A4,I4) 
+        barra10 = Barra(10,no8,no6,E,A4,I4) 
         self.barras = [barra1, barra2, barra3, barra4, barra5, barra6, barra7, barra8, barra9, barra10]
-        
+
         """
         Definição dos carregamentos nas barras
         """
-        w = 10.0
-        carregamento1 = Carregamento_distribuido(0.0,self.lf-(self.b/2),w,w,barra2)
-        carregamento2 = Carregamento_distribuido(0.0,b,w,w,barra4)
-        carregamento3 = Carregamento_distribuido(0.0,self.l-self.lf-(self.b/2),w,w,barra5)
-        
-        no2.Fy = 0.0
+        carregamento1 = Carregamento_distribuido(0.0,self.lf-(self.b/2),self.w,self.w,barra2)
+        carregamento2 = Carregamento_distribuido(0.0,b,self.w,self.w,barra4)
+        carregamento3 = Carregamento_distribuido(0.0,self.l-self.lf-(self.b/2),self.w,self.w,barra5)
         
         """
         Calcula as forças de engastamento perfeito
@@ -508,30 +527,7 @@ class Modelo:
         carregamento2.calcula_fep()
         carregamento3.calcula_fepl()
         carregamento3.calcula_fep()
-
-        # Verificação Fep
-        print("fep barra1")
-        print_vetor(barra1.fep)
-        print("fep barra2")
-        print_vetor(barra2.fep)
-        print("fep barra3")
-        print_vetor(barra3.fep)
-        print("fep barra4")
-        print_vetor(barra4.fep)
-        print("fep barra5")
-        print_vetor(barra5.fep)
-        print("fep barra6")
-        print_vetor(barra6.fep)
-        print("fep barra7")
-        print_vetor(barra7.fep)
-        print("fep barra8")
-        print_vetor(barra8.fep)
-        print("fep barra9")
-        print_vetor(barra9.fep)
-        print("fep barra10")
-        print_vetor(barra10.fep)
-
-    #def resultados(self):
+        
         """
         Define a estrutura, calcula os resultados de deslocamentos, solicitações internas e reações
         """
@@ -539,16 +535,23 @@ class Modelo:
         portico.monta_k()
         print("k")
         print_matriz(portico.k)
+
         portico.monta_k01()
         print("k01")
         print_matriz(portico.k01)
+
         portico.monta_fnos()
+        print("fnos")
+        print_vetor(portico.fnos)
+
         portico.aplica_cc_fnos()
         print("f01")
         print_vetor(portico.fnos)
+
         portico.calcula_deslocamentos()
         print("deslocamentos")
         print_vetor(portico.u)
+
         portico.calcula_solicitacoes_internas_nodais()
         print("solicitacoes barra1")
         print_vetor(portico.barras[0].fl)
@@ -570,6 +573,7 @@ class Modelo:
         print_vetor(portico.barras[8].fl)
         print("solicitacoes barra10")
         print_vetor(portico.barras[9].fl)
+
         portico.calcula_reacoes()
         print("reacoes")
         print_vetor(portico.R)
