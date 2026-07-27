@@ -43,6 +43,9 @@ class Barra:
             I: momento de inercia      
         """
 
+        if no1.x > no2.x or no1.x == no2.x and no1.y < no2.y:
+            no1, no2 = no2, no1
+
         self.num = int(num)
         self.noi = no1
         self.noj = no2
@@ -309,6 +312,13 @@ class Carregamento_distribuido:
         """
         Cria o objeto carregamento distribuido
 
+        OBS: w1 e w2 devem estar de acordo com o sistema de coordenadas global
+
+        Sendo:
+
+        Eixo y positivo para cima
+        Eixo x positivo para direita
+
         Argumentos:
 
             a: distância do nó inicial da barra até o inicio da força
@@ -329,7 +339,6 @@ class Carregamento_distribuido:
         Calcula o vetor de forças de engastamento perfeito no sistema local da barra
         """
 
-        dx = self.barra.noj.x - self.barra.noi.x
         L = self.barra.L
         b = L - self.lw - self.a
         wm = (self.w1 + self.w2)/2.0
@@ -344,12 +353,6 @@ class Carregamento_distribuido:
         mb = -(self.lw*(s3*wm+s4*wd))/(120.0*L*L)
         ma = -mb+rb*L-self.a*self.lw*wm-(self.lw*self.lw*(2.0*self.w2+self.w1))/6.0
         
-        if dx < 0:
-            ra = -ra
-            ma = -ma
-            rb = -rb
-            mb = -mb
-
         self.barra.fepl[1] += ra
         self.barra.fepl[2] += ma
         self.barra.fepl[4] += rb
@@ -369,13 +372,23 @@ class Carregamento_pontual:
         """
         Cria o objeto carregamento pontual
 
+        OBS: Px e Py devem estar de acordo com o sistema de coordenadas global
+
+        Sendo:
+
+        Eixo y positivo para cima
+        Eixo x positivo para direita
+
         Argumentos:
 
             a: distância do nó inicial da barra até o ponto de aplicação da força
-            Px: componente x da força
-            Py: componente y da força
+            Px: componente horizontal da força
+            Py: componente vertical da força
             barra: objeto barra
         """
+
+        if self.barra.noi.x == self.barra.noj.x and self.barra.noi.y < self.barra.noj.y:
+            Px,Py = -Py,Px
 
         self.a = a
         self.Px = Px
@@ -387,7 +400,6 @@ class Carregamento_pontual:
         Calcula o vetor de forças de engastamento perfeito no sistema local da barra
         """
 
-        dx = self.barra.noj.x - self.barra.noi.x
         L = self.barra.L
         b = L - self.a
         sa = L + 2*self.a
@@ -395,18 +407,10 @@ class Carregamento_pontual:
 
         ha = -(self.Px*b*b*sa)/(L**3)
         hb = -(self.Px*self.a*self.a*sb)/(L**3)
-        ra = (self.Py*b*b*sa)/(L**3)
-        rb = (self.Py*self.a*self.a*sb)/(L**3)
-        ma = (self.Py*self.a*b*b)/(L*L)
-        mb = -(self.Py*self.a*self.a*b)/(L*L)
-
-        if dx < 0:
-            ha = -ha
-            ra = -ra
-            ma = -ma
-            hb = -hb
-            rb = -rb
-            mb = -mb
+        ra = -(self.Py*b*b*sa)/(L**3)
+        rb = -(self.Py*self.a*self.a*sb)/(L**3)
+        ma = -(self.Py*self.a*b*b)/(L*L)
+        mb = (self.Py*self.a*self.a*b)/(L*L)
 
         self.barra.fepl[0] += ha
         self.barra.fepl[1] += ra
