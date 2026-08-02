@@ -311,7 +311,7 @@ class Carregamento_distribuido:
 
         Argumentos:
 
-            a: distância do nó inicial da barra até o inicio da força
+            a: distância do nó inicial da barra até o inicio do carregamento
             lw: comprimento do carregamento
             w1: modulo inicial do carregamento
             w2: modulo final do carregamento
@@ -329,7 +329,6 @@ class Carregamento_distribuido:
         Calcula o vetor de forças de engastamento perfeito no sistema local da barra
         """
 
-        dx = self.barra.noj.x - self.barra.noi.x
         L = self.barra.L
         b = L - self.lw - self.a
         wm = (self.w1 + self.w2)/2.0
@@ -344,12 +343,6 @@ class Carregamento_distribuido:
         mb = -(self.lw*(s3*wm+s4*wd))/(120.0*L*L)
         ma = -mb+rb*L-self.a*self.lw*wm-(self.lw*self.lw*(2.0*self.w2+self.w1))/6.0
         
-        if dx < 0:
-            ra = -ra
-            ma = -ma
-            rb = -rb
-            mb = -mb
-
         self.barra.fepl[1] += ra
         self.barra.fepl[2] += ma
         self.barra.fepl[4] += rb
@@ -387,7 +380,6 @@ class Carregamento_pontual:
         Calcula o vetor de forças de engastamento perfeito no sistema local da barra
         """
 
-        dx = self.barra.noj.x - self.barra.noi.x
         L = self.barra.L
         b = L - self.a
         sa = L + 2*self.a
@@ -399,14 +391,6 @@ class Carregamento_pontual:
         rb = (self.Py*self.a*self.a*sb)/(L**3)
         ma = (self.Py*self.a*b*b)/(L*L)
         mb = -(self.Py*self.a*self.a*b)/(L*L)
-
-        if dx < 0:
-            ha = -ha
-            ra = -ra
-            ma = -ma
-            hb = -hb
-            rb = -rb
-            mb = -mb
 
         self.barra.fepl[0] += ha
         self.barra.fepl[1] += ra
@@ -499,16 +483,19 @@ class Modelo:
         I4 = I1*1000
         A4 = A1*1000
 
-        barra1 = Barra(1,no2,no1,E,A1,I1)
+        """
+        Ordem dos nós na definição das barras de ser sempre da esquerda para direita ou de baixo para cima
+        """
+        barra1 = Barra(1,no1,no2,E,A1,I1)
         barra2 = Barra(2,no2,no3,E,A1,I1)
-        barra3 = Barra(3,no7,no4,E,A2,I2)
-        barra4 = Barra(4,no8,no5,E,A3,I3)
+        barra3 = Barra(3,no4,no7,E,A2,I2)
+        barra4 = Barra(4,no5,no8,E,A3,I3)
         barra5 = Barra(5,no6,no9,E,A1,I1)
         barra6 = Barra(6,no9,no10,E,A1,I1)
-        barra7 = Barra(7,no3,no4,E,A4,I4)
-        barra8 = Barra(8,no5,no3,E,A4,I4)
+        barra7 = Barra(7,no4,no3,E,A4,I4)
+        barra8 = Barra(8,no3,no5,E,A4,I4)
         barra9 = Barra(9,no7,no6,E,A4,I4)
-        barra10 = Barra(10,no8,no6,E,A4,I4) 
+        barra10 = Barra(10,no6,no8,E,A4,I4) 
         self.barras = [barra1, barra2, barra3, barra4, barra5, barra6, barra7, barra8, barra9, barra10]
 
         """

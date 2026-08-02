@@ -5,7 +5,7 @@
 
 Abaixo segue a representação da geometria do problema:
 
-![Image](res/image_1.png)
+![alt text](geometria_variaveis.png)
 
 ---
 
@@ -13,6 +13,6 @@ Abaixo segue a representação da geometria do problema:
 
 Abaixo segue os valores adotados para esse modelo:
 
-![Image](res/image_2.png)
+![alt text](geometria_valores.png)
 
 ---

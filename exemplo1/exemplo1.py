@@ -1,3 +1,9 @@
+from pathlib import Path
+import sys
+
+RAIZ_PROJETO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(RAIZ_PROJETO))
+
 from rigidez import *
 
 print("#########################################################################################################")
@@ -23,8 +29,8 @@ no3.Ty = True
 no3.Rz = True
 
 # Definição das barras e propriedades
-barra1 = Barra(1.0,no1,no2,10000.0,2.0*5.0,1000.0)
-barra2 = Barra(2.0,no2,no3,10000.0,2.0*5.0,1000.0)
+barra1 = Barra(1.0,no1,no2,10000.0,10.0,1000.0)
+barra2 = Barra(2.0,no2,no3,10000.0,10.0,1000.0)
 barras = [barra1, barra2]
 
 # Definição dos carregamentos nas barras

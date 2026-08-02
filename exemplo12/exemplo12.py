@@ -1,3 +1,9 @@
+from pathlib import Path
+import sys
+
+RAIZ_PROJETO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(RAIZ_PROJETO))
+
 from rigidez import *
 
 print("#########################################################################################################")
@@ -23,11 +29,11 @@ no4.Ty = True
 # Definição das barras e propriedades
 barra1 = Barra(1.0,no1,no2,2.5e7,1.34e-2,2.92e-4)
 barra2 = Barra(2.0,no2,no3,2.5e7,1.34e-2,2.92e-4)
-barra3 = Barra(3.0,no3,no4,2.5e7,1.34e-2,2.92e-4)
+barra3 = Barra(3.0,no4,no3,2.5e7,1.34e-2,2.92e-4)
 barras = [barra1, barra2, barra3]
 
 # Definição dos carregamentos nas barras
-carregamento1 = Carregamento_distribuido(0,4,10.0,10.0,barra1)
+carregamento1 = Carregamento_distribuido(0,4.0,10.0,10.0,barra1)
 
 # Definição da estrutura
 portico = Estrutura(nos,barras)
