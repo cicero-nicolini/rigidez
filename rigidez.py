@@ -447,13 +447,13 @@ class Modelo:
         """
         no1 = No(1, 0.0, 0.0)
         no2 = No(2, self.ap1/2.0, 0.0)
-        no3 = No(3, self.ap1/2.0 + self.lf - self.b/2.0, 0.0)
-        no4 = No(4, self.ap1/2.0 + self.lf - self.b/2.0, -(self.h-self.c)/2.0)
-        no5 = No(5, self.ap1/2.0 + self.lf - self.b/2.0, (self.a+self.c)/2.0)
-        no6 = No(6, self.ap1/2.0 + self.lf + self.b/2.0, 0.0)
-        no7 = No(7, self.ap1/2.0 + self.lf + self.b/2.0, -(self.h-self.c)/2.0)
-        no8 = No(8, self.ap1/2.0 + self.lf + self.b/2.0, (self.a+self.c)/2.0)
-        no9 = No(9, self.ap1/2.0+ self.l, 0.0)
+        no3 = No(3, self.ap1/2.0 + self.lf - self.b/2.0 - self.bw/2.0, 0.0)
+        no4 = No(4, self.ap1/2.0 + self.lf - self.b/2.0 - self.bw/2.0, -(self.h-self.c)/2.0)
+        no5 = No(5, self.ap1/2.0 + self.lf - self.b/2.0 - self.bw/2.0, (self.a+self.c)/2.0)
+        no6 = No(6, self.ap1/2.0 + self.lf + self.b/2.0 + self.bw/2.0, 0.0)
+        no7 = No(7, self.ap1/2.0 + self.lf + self.b/2.0 + self.bw/2.0, -(self.h-self.c)/2.0)
+        no8 = No(8, self.ap1/2.0 + self.lf + self.b/2.0 + self.bw/2.0, (self.a+self.c)/2.0)
+        no9 = No(9, self.ap1/2.0 + self.l, 0.0)
         no10 = No(10, self.ap1/2.0 + self.l + self.ap2/2.0, 0.0)
         self.nos = [no1, no2, no3, no4, no5, no6, no7, no8, no9, no10]
 
@@ -501,9 +501,9 @@ class Modelo:
         """
         Definição dos carregamentos nas barras
         """
-        carregamento1 = Carregamento_distribuido(0.0,self.lf-(self.b/2),self.w,self.w,barra2)
-        carregamento2 = Carregamento_distribuido(0.0,b,self.w,self.w,barra4)
-        carregamento3 = Carregamento_distribuido(0.0,self.l-self.lf-(self.b/2),self.w,self.w,barra5)
+        carregamento1 = Carregamento_distribuido(0.0,self.lf-(self.b/2)-(self.bw/2),self.w,self.w,barra2)
+        carregamento2 = Carregamento_distribuido(0.0,self.b+self.bw,self.w,self.w,barra4)
+        carregamento3 = Carregamento_distribuido(0.0,self.l-self.lf-(self.b/2)-(self.bw/2),self.w,self.w,barra5)
         
         """
         Calcula as forças de engastamento perfeito
