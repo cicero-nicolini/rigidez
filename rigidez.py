@@ -387,9 +387,7 @@ class Estrutura:
             barra.monta_q()
             barra.calcula_r()
 
-            """
-            Monta o vetor u para as barras
-            """
+            # Monta o vetor u para as barras
             for i in range(0,6):
                 barra.u[i] = self.u[barra.q[i]]
 
