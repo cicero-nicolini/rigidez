@@ -4,12 +4,14 @@ import math
 #from matplotlib.collections import LineCollection
 
 class Concreto:
-    def __init__(self, fck:float, γc:float = 1.4, αE:float = 1.0):
+    """Representa as propriedades e parâmetros referente ao concreto."""
 
+    def __init__(self, fck: float, γc: float = 1.4, αE: float = 1.0) -> None:
         """
-        Cria o objeto Concreto
+        Instancia um objeto da classe Concreto
 
-        Argumentos:
+
+        Args:
 
             fck: resistência característica do concreto
             γc: coeficiente de segurança do concreto
@@ -21,10 +23,15 @@ class Concreto:
             αE = 1.0 para granito e gnaisse
             αE = 0.9 para calcário
             αE = 0.7 para arenito
+
+        Raises:
+            ValueError: Se o fck estiver fora do intervalo de 20 a 90 MPa.
+            ValueError: Caso αE não corresponda aos valores indicados.
         """
 
         if fck > 90 or fck < 20:
             raise ValueError("fck deve ser entre 20 e 90")
+        
         if αE not in [0.7, 0.9, 1.0, 1.2]:
             raise ValueError("αE deve ser 0.7, 0.9, 1.0 ou 1.2")
         
@@ -32,21 +39,27 @@ class Concreto:
         self.γc = γc
         self.fcd = fck/γc
         self.Eci = αE*5600*math.sqrt(fck)
-        self.ηc = 1.0
         self.αc = 0.85
         self.λ = 0.8
         self.εcu = 0.0035
         self.εc2 = 0.002
 
-        if fck > 40 and fck <= 90:
-            self.ηc = (40/fck)**(1/3)
+    @property
+    def ηc(self) -> float:
+        ηc = 1.0
+        if self.fck > 40 and self.fck <= 90:
+            ηc = (40/self.fck)**(1/3)
+        return ηc
 
-        if fck > 50 and fck <= 90:
-            self.αc = 0.85*(1-(fck-50)/200)
-            self.εcu = 0.0026 + 0.035*((90-fck)/100)**4
-            self.εc2 = 0.002 + 0.000085*((fck-50)**0.53)
-            self.Eci = 21.5*10**3*αE*((fck/10)+1.25)**(1/3)
-            self.λ = 0.8 - ((fck-50)/400)
+    @property
+    def qualquer(self):
+        if self.fck > 50 and self.fck <= 90:
+            self.αc = 0.85*(1-(self.fck-50)/200)
+            self.εcu = 0.0026 + 0.035*((90-self.fck)/100)**4
+            self.εc2 = 0.002 + 0.000085*((self.fck-50)**0.53)
+            self.Eci = 21.5*10**3*self.αE*((self.fck/10)+1.25)**(1/3)
+            self.λ = 0.8 - ((self.fck-50)/400)
+
 
 class Aco:
     def __init__(self, fyk:float, γs:float = 1.15, Es:float = 210000.0):
@@ -66,6 +79,7 @@ class Aco:
         self.fyd = fyk/γs
         self.Es = Es
         self.εyd = self.fyd/Es
+
 
 class Secao:
     def __init__(self,nome:str, b:float, h:float, E:float = None, d:float = None, d_linha:float = None):
@@ -253,8 +267,8 @@ class Barra:
             if N[i] == 0:
                 Mdlim = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*xlim*self.concreto.λ(self.secao.d-self.concreto.λ*xlim/2.0)
                 if Md[i] > Mdlim:
-                    x[i] = (self.secao.d - math.sqrt(self.secao.d**2-2.0*Md[i]/(self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b)))/self.concreto.λ
-                    ASL[i] = (self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*x[i]*self.concreto.λ)/self.aco.fyd
+                    self.x[i] = (self.secao.d - math.sqrt(self.secao.d**2-2.0*Md[i]/(self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b)))/self.concreto.λ
+                    self.ASL[i] = (self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.x[i]*self.concreto.λ)/self.aco.fyd
 
 
 
