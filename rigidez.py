@@ -249,11 +249,12 @@ class Barra:
             if xlim > 0.35*self.secao.d:
                 xlim = 0.35*self.secao.d
 
-        if N[0] == 0:
-            Mdlim = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*xlim*self.concreto.λ(self.secao.d-self.concreto.λ*xlim/2.0)
-            if Md[0] > Mdlim:
-                x[0] = (self.secao.d - math.sqrt(self.secao.d**2-2.0*Md[0]/(self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b)))/self.concreto.λ
-                ASL[0] = (self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*x[0]*self.concreto.λ)/self.aco.fyd
+        for i in N:
+            if N[i] == 0:
+                Mdlim = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*xlim*self.concreto.λ(self.secao.d-self.concreto.λ*xlim/2.0)
+                if Md[i] > Mdlim:
+                    x[i] = (self.secao.d - math.sqrt(self.secao.d**2-2.0*Md[i]/(self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b)))/self.concreto.λ
+                    ASL[i] = (self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*x[i]*self.concreto.λ)/self.aco.fyd
 
 
 
