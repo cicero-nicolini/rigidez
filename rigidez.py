@@ -3,6 +3,94 @@ import numpy as np
 import math
 #from matplotlib.collections import LineCollection
 
+class Concreto:
+    def __init__(self, fck:float, γc:float = 1.4, αE:float = 1.0):
+
+        """
+        Cria o objeto Concreto
+
+        Argumentos:
+
+            fck: resistência característica do concreto
+            γc: coeficiente de segurança do concreto
+            αE: coeficiente de ajuste do módulo de elasticidade
+
+            Valores de αE:
+
+            αE = 1.2 para basalto e diabásio
+            αE = 1.0 para granito e gnaisse
+            αE = 0.9 para calcário
+            αE = 0.7 para arenito
+        """
+
+        if fck > 90 or fck < 20:
+            raise ValueError("fck deve ser entre 20 e 90")
+        if αE not in [0.7, 0.9, 1.0, 1.2]:
+            raise ValueError("αE deve ser 0.7, 0.9, 1.0 ou 1.2")
+        
+        self.fck = fck 
+        self.γc = γc
+        self.fcd = fck/γc
+        self.Eci = αE*5600*math.sqrt(fck)
+        self.ηc = 1.0
+        self.αc = 0.85
+        self.λ = 0.8
+        self.εcu = 0.0035
+        self.εc2 = 0.002
+
+        if fck > 40 and fck <= 90:
+            self.ηc = (40/fck)**(1/3)
+
+        if fck > 50 and fck <= 90:
+            self.αc = 0.85*(1-(fck-50)/200)
+            self.εcu = 0.0026 + 0.035*((90-fck)/100)**4
+            self.εc2 = 0.002 + 0.000085*((fck-50)**0.53)
+            self.Eci = 21.5*10**3*αE*((fck/10)+1.25)**(1/3)
+            self.λ = 0.8 - ((fck-50)/400)
+
+class Aco:
+    def __init__(self, fyk:float, γs:float = 1.15, Es:float = 210000.0):
+    
+        """
+        Cria o objeto Aço
+    
+        Argumentos:
+    
+            fyk: resistência característica do aço
+            γs: coeficiente de segurança do aço
+            Es: módulo de elasticidade do aço
+        """
+    
+        self.fyk = fyk 
+        self.γs = γs
+        self.fyd = fyk/γs
+        self.Es = Es
+        self.εyd = self.fyd/Es
+
+class Secao:
+    def __init__(self,nome:str, b:float, h:float, E:float = None, d:float = None, d_linha:float = None):
+    
+        """
+        Cria o objeto Seção
+    
+        Argumentos:
+    
+            nome: nome da seção
+            b: largura da seção
+            h: altura da seção
+            E: módulo de elasticidade da seção
+            d: altura útil da armadura tracionada
+            d_linha: altura útil da armadura comprimida     
+        """
+    
+        self.nome = nome
+        self.b = b
+        self.h = h
+        self.d = d
+        self.d_linha = d_linha
+        self.E = E
+        self.A = b*h
+        self.I = b*h**3/12
 
 class No:
     def __init__(self, num:int, x:float, y:float):
@@ -28,7 +116,7 @@ class No:
         self.Rz = False
 
 class Barra: 
-    def __init__(self, num:int, no1:No, no2:No, E:float, A:float, I:float):
+    def __init__(self, num:int, no1:No, no2:No, secao:Secao, concreto:Concreto = None, aco:Aco = None):
 
         """
         Cria o objeto barra
@@ -38,17 +126,17 @@ class Barra:
             num: numero da barra
             no1: no inicial
             no2: no final
-            E: modulo de elasticidade do material
-            A: area da secao transversal
-            I: momento de inercia      
+            concreto: objeto com propriedades do concreto
+            aco: objeto com propriedades do aço
+            secao: objeto com propriedades da seção transversal      
         """
 
         self.num = int(num)
         self.noi = no1
         self.noj = no2
-        self.E = E
-        self.A = A
-        self.I = I
+        self.concreto = concreto
+        self.aco = aco
+        self.secao = secao
         self.L = None      
         self.kl = np.zeros((6,6))
         self.k = np.zeros((6,6))
@@ -59,10 +147,11 @@ class Barra:
         self.fl = np.zeros((6))
         self.u = np.zeros((6))
         self.q = np.zeros((6),dtype=int)
+        self.x = np.zeros((2))
+        self.ASL = np.zeros((2))
         self.comprimento_barra()
         self.calcula_r()
         
-
     def comprimento_barra(self) -> float:
         dx = self.noj.x - self.noi.x
         dy = self.noj.y - self.noi.y
@@ -140,6 +229,46 @@ class Barra:
             for jk in range(0,3):
                 z = z + 1
                 self.q[z] = 3*(M[j]-1)+jk
+
+    def calcula_vetor_ASL(self) -> int:
+        """
+        Calcula vetor x e  vetor ASL da barra      
+        """
+
+        γq = 1.4
+        M = np.array([self.fl[2], self.fl[5]])
+        N = np.array([self.fl[0], self.fl[3]])
+        Md = M*γq
+        Nd = N*γq
+
+        xlim = (self.concreto.εcu*self.secao.d)/(self.concreto.εyd+self.concreto.εcu)
+
+        if xlim > 0.45*self.secao.d:
+            xlim = 0.45*self.secao.d
+        if self.concreto.fck > 50 and self.concreto.fck <= 90:
+            if xlim > 0.35*self.secao.d:
+                xlim = 0.35*self.secao.d
+
+        if N[0] == 0:
+            Mdlim = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*xlim*self.concreto.λ(self.secao.d-self.concreto.λ*xlim/2.0)
+            if Md[0] > Mdlim:
+                x[0] = (self.secao.d - math.sqrt(self.secao.d**2-2.0*Md[0]/(self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b)))/self.concreto.λ
+                ASL[0] = (self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*x[0]*self.concreto.λ)/self.aco.fyd
+
+
+
+    
+
+
+
+
+
+
+
+
+            
+
+        
       
 class Estrutura:
     def __init__(self, nos:list, barras:list):
