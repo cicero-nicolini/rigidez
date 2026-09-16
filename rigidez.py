@@ -37,66 +37,103 @@ class Concreto:
         
         self.fck = fck 
         self.γc = γc
-        self.fcd = fck/γc
-        self.Eci = αE*5600*math.sqrt(fck)
-        self.αc = 0.85
-        self.λ = 0.8
-        self.εcu = 0.0035
-        self.εc2 = 0.002
+        self.αE = αE
 
+    @property
+    def fcd(self) -> float:
+        fcd = self.fck/self.γc
+        return fcd
+    
     @property
     def ηc(self) -> float:
         ηc = 1.0
-        if self.fck > 40 and self.fck <= 90:
+        if 40 < self.fck <= 90:
             ηc = (40/self.fck)**(1/3)
         return ηc
+    
+    @property
+    def Eci(self) -> float:
+        Eci = 5600*self.αE*math.sqrt(self.fck)
+        if 50 < self.fck <= 90:
+            Eci = 21.5*10**3*self.αE*((self.fck/10)+1.25)**(1/3)
+        return Eci
 
     @property
-    def qualquer(self):
-        if self.fck > 50 and self.fck <= 90:
-            self.αc = 0.85*(1-(self.fck-50)/200)
-            self.εcu = 0.0026 + 0.035*((90-self.fck)/100)**4
-            self.εc2 = 0.002 + 0.000085*((self.fck-50)**0.53)
-            self.Eci = 21.5*10**3*self.αE*((self.fck/10)+1.25)**(1/3)
-            self.λ = 0.8 - ((self.fck-50)/400)
+    def αc(self) -> float:
+        αc = 0.85
+        if 50 < self.fck <= 90:
+            αc = 0.85*(1-(self.fck-50)/200)
+        return αc
 
+    @property
+    def λ(self) -> float:
+        λ = 0.8
+        if 50 < self.fck <= 90:
+            λ = 0.8 - ((self.fck-50)/400)
+        return λ
 
+    @property
+    def εc2(self) -> float:
+        εc2 = 0.002
+        if 50 < self.fck <= 90:
+            εc2 = 0.002 + 0.000085*((self.fck-50)**0.53)
+        return εc2
+
+    @property
+    def εcu(self) -> float:
+        εcu = 0.0035
+        if 50 < self.fck <= 90:
+            εcu = 0.0026 + 0.035*((90-self.fck)/100)**4
+        return εcu
+  
 class Aco:
-    def __init__(self, fyk:float, γs:float = 1.15, Es:float = 210000.0):
-    
+    """Representa as propriedades e parâmetros referente ao aço."""
+
+    def __init__(self, fyk:float, γs:float = 1.15, Es:float = 210000.0) -> None:
         """
-        Cria o objeto Aço
-    
-        Argumentos:
-    
+        Instancia um objeto da classe Aco
+
+
+        Args:
+
             fyk: resistência característica do aço
             γs: coeficiente de segurança do aço
             Es: módulo de elasticidade do aço
         """
-    
+
         self.fyk = fyk 
         self.γs = γs
-        self.fyd = fyk/γs
         self.Es = Es
-        self.εyd = self.fyd/Es
+    
+    @property
+    def fyd(self) -> float:
+        fyd = self.fyk/self.γs
+        return fyd
 
+    @property
+    def εyd(self) -> float:
+        fyd = self.fyk/self.γs
+        εyd = fyd/self.Es
+        return εyd
 
 class Secao:
-    def __init__(self,nome:str, b:float, h:float, E:float = None, d:float = None, d_linha:float = None):
-    
+    """Representa as propriedades e parâmetros referente a seção transversal."""
+
+    def __init__(self,nome:str, b:float, h:float, E:float = None, d:float = None, d_linha:float = None) -> None:
         """
-        Cria o objeto Seção
-    
-        Argumentos:
-    
+        Instancia um objeto da classe Secao
+
+
+        Args:
+
             nome: nome da seção
             b: largura da seção
             h: altura da seção
             E: módulo de elasticidade da seção
             d: altura útil da armadura tracionada
-            d_linha: altura útil da armadura comprimida     
+            d_linha: altura útil da armadura comprimida 
         """
-    
+
         self.nome = nome
         self.b = b
         self.h = h
@@ -107,16 +144,18 @@ class Secao:
         self.I = b*h**3/12
 
 class No:
-    def __init__(self, num:int, x:float, y:float):
+    """Representa as propriedades e parâmetros referente ao objeto nó."""
 
+    def __init__(self, num:int, x:float, y:float) -> None:
         """
-        Cria o objeto no
+        Instancia um objeto da classe Nó
 
-        Argumentos:
 
-            num: numero do no
-            x: coordenada x do no
-            y: coordenada y do no     
+        Args:
+
+            num: número do nó
+            x: coordenada x do nó
+            y: coordenada y do nó
         """
 
         self.num = int(num) 
@@ -129,20 +168,22 @@ class No:
         self.Ty = False
         self.Rz = False
 
-class Barra: 
-    def __init__(self, num:int, no1:No, no2:No, secao:Secao, concreto:Concreto = None, aco:Aco = None):
+class Barra:
+    """Representa as propriedades e parâmetros referente ao objeto barra."""
 
+    def __init__(self, num:int, no1:No, no2:No, secao:Secao, concreto:Concreto = None, aco:Aco = None) -> None:
         """
-        Cria o objeto barra
+        Instancia um objeto da classe Barra
 
-        Argumentos:
+
+        Args:
 
             num: numero da barra
             no1: no inicial
             no2: no final
+            secao: objeto com propriedades da seção transversal 
             concreto: objeto com propriedades do concreto
             aco: objeto com propriedades do aço
-            secao: objeto com propriedades da seção transversal      
         """
 
         self.num = int(num)
@@ -163,18 +204,18 @@ class Barra:
         self.q = np.zeros((6),dtype=int)
         self.x = np.zeros((2))
         self.ASL = np.zeros((2))
+        self.ASL2 = np.zeros((2))
         self.comprimento_barra()
         self.calcula_r()
         
-    def comprimento_barra(self) -> float:
+    def comprimento_barra(self) -> None:
         dx = self.noj.x - self.noi.x
         dy = self.noj.y - self.noi.y
         self.L = math.sqrt( dx * dx + dy * dy )
 
-    def calcula_klocal(self) -> float:
-        """
-        Calcula matriz de rigidez no sistema local para a barra      
-        """
+    def calcula_klocal(self) -> None:
+
+        #Calcula matriz de rigidez no sistema local para a barra      
         
         a1 = self.E*self.A/self.L
         a2 = (12.0*self.E*self.I)/self.L**3
@@ -204,10 +245,9 @@ class Barra:
         self.kl[5,2] = self.kl[2,5]
         self.kl[5,4] = self.kl[4,5]
 
-    def calcula_r(self) -> float:
-        """
-        Calcula matriz de rotação para a barra      
-        """ 
+    def calcula_r(self) -> None:
+        
+        #Calcula matriz de rotação para a barra       
 
         dx = self.noj.x - self.noi.x
         dy = self.noj.y - self.noi.y
@@ -225,17 +265,15 @@ class Barra:
         self.r[4,4] = c
         self.r[5,5] = 1 
 
-    def calcula_k(self) -> float:
-        """
-        Monta matriz de rigidez no sistema global para a barra      
-        """
+    def calcula_k(self) -> None:
+        
+        #Monta matriz de rigidez no sistema global para a barra      
 
         self.k = np.linalg.inv(self.r)@ self.kl @ self.r
 
-    def monta_q(self) -> int:
-        """
-        Monta vetor de correspondencia de graus de liberdade da barra      
-        """
+    def monta_q(self) -> None:
+        
+        #Monta vetor de correspondencia de graus de liberdade da barra      
 
         z = -1
         M = np.array([self.noi.num, self.noj.num])
@@ -244,10 +282,9 @@ class Barra:
                 z = z + 1
                 self.q[z] = 3*(M[j]-1)+jk
 
-    def calcula_vetor_ASL(self) -> int:
-        """
-        Calcula vetor x e  vetor ASL da barra      
-        """
+    def calcula_vetor_ASL(self) -> None:
+
+        #Calcula vetor x e vetor ASL da barra      
 
         γq = 1.4
         M = np.array([self.fl[2], self.fl[5]])
@@ -269,6 +306,15 @@ class Barra:
                 if Md[i] > Mdlim:
                     self.x[i] = (self.secao.d - math.sqrt(self.secao.d**2-2.0*Md[i]/(self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b)))/self.concreto.λ
                     self.ASL[i] = (self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.x[i]*self.concreto.λ)/self.aco.fyd
+                else:
+                    self.x[i] = xlim
+                    ε2 = self.concreto.εcu*(1-(self.secao.d_linha/self.x[i]))
+                    if ε2 > self.aco.εyd:
+                        σ2: float = self.aco.fyd
+                    else:
+                        σ2: float = self.aco.Es*ε2
+                    self.ASL2[i] = Md[i] - self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.x[i]*self.concreto.λ*(self.secao.d - (self.concreto.λ*self.x[i]/2.0))
+                    self.ASL[i] = (self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.x[i]*self.concreto.λ + self.ASL2[i]*σ2)/self.aco.fyd
 
 
 
@@ -286,15 +332,17 @@ class Barra:
         
       
 class Estrutura:
-    def __init__(self, nos:list, barras:list):
+    """Representa as propriedades e parâmetros referente ao objeto estrutura."""
 
+    def __init__(self, nos:list, barras:list) -> None:
         """
-        Cria o objeto estrutura
+        Instancia um objeto da classe Estrutura
 
-        Argumentos:
+
+        Args:
 
             nos: lista de objetos nós
-            barras: lista de objetos barras      
+            barras: lista de objetos barras
         """
 
         self.nos = nos
@@ -307,11 +355,10 @@ class Estrutura:
         self.k01 = np.zeros((self.nnos*3,self.nnos*3))
         self.R = np.zeros((self.nnos*3))
               
-    def monta_k(self) -> float:
-        """
-        Monta a matriz de rigidez da estrutura       
-        """
-
+    def monta_k(self) -> None:
+        
+        #Monta a matriz de rigidez da estrutura       
+        
         for barra in self.barras:
             barra.comprimento_barra()
             barra.calcula_klocal()
@@ -322,11 +369,10 @@ class Estrutura:
                 for jk in range(0,6):
                     self.k[barra.q[j], barra.q[jk]] += barra.k[j,jk]
 
-    def monta_k01(self) -> float:
-        """
-        Aplica as condições de contorno na matriz da estrutura para calcular os deslocamentos       
-        """
-
+    def monta_k01(self) -> None:
+    
+        #Aplica as condições de contorno na matriz da estrutura para calcular os deslocamentos       
+    
         self.k01 = self.k
         for no in self.nos:
             if no.Tx:
@@ -345,10 +391,9 @@ class Estrutura:
                 self.k01[:,gdl] = 0.0
                 self.k01[gdl,gdl] = 1.0           
         
-    def monta_fnos(self) -> float:
-        """
-        Monta vetor de forças necessário para calcular deslocamentos na estrutura      
-        """
+    def monta_fnos(self) -> None:
+        
+        #Monta vetor de forças necessário para calcular deslocamentos na estrutura      
 
         for no in self.nos:
             self.fnos[3*no.num-3] = no.Fx
@@ -359,10 +404,10 @@ class Estrutura:
             for j in range(0,6):
                 self.fnos[barra.q[j]] += -barra.fep[j]
                 
-    def aplica_cc_fnos(self) -> float:
-        """
-        Aplica as condições de contorno no vetor fnos para calcular deslocamentos na estrutura       
-        """
+    def aplica_cc_fnos(self) -> None:
+        
+        #Aplica as condições de contorno no vetor fnos para calcular deslocamentos na estrutura       
+    
         for no in self.nos:
             if no.Tx:
                 self.fnos[3*no.num-3] = 0
@@ -371,18 +416,16 @@ class Estrutura:
             if no.Rz:
                 self.fnos[3*no.num-1] = 0
 
-    def calcula_deslocamentos(self) -> float:
-        """
-        Calcula o vetor de deslocamentos da estrutura       
-        """
-
+    def calcula_deslocamentos(self) -> None:
+        
+        #Calcula o vetor de deslocamentos da estrutura       
+        
         self.u = np.linalg.inv(self.k01)@ self.fnos
 
-    def calcula_solicitacoes_internas_nodais(self) -> float:
-        """
-        Calcula as forças no sistema local para as barras = solicitações
-        """
-
+    def calcula_solicitacoes_internas_nodais(self) -> None:
+        
+        #Calcula as forças no sistema local para as barras = solicitações
+        
         for barra in self.barras:
             barra.monta_q()
             barra.calcula_r()
@@ -391,34 +434,28 @@ class Estrutura:
             for i in range(0,6):
                 barra.u[i] = self.u[barra.q[i]]
 
-            """
-            Calcula o vetor f para as barras
-            """      
+            #Calcula o vetor f para as barras
+
             barra.f = barra.k @ barra.u + barra.fep
 
-
-            """
-            Transforma o vetor f para o sistema local para as barras = solicitacoes
-            """       
+            #Transforma o vetor f para o sistema local para as barras = solicitacoes
+                 
             barra.fl = barra.r @ barra.f    
 
-    def calcula_reacoes(self) -> float:
-        """
-        Calcula um vetor com as reações da estrutura       
-        """
-
+    def calcula_reacoes(self) -> None:
+        
+        #Calcula um vetor com as reações da estrutura       
+        
         for barra in self.barras:
             barra.monta_q()
 
-            """
-            Monta o vetor u para as barras
-            """
+            #Monta o vetor u para as barras
+            
             for i in range(0,6):
                 barra.u[i] = self.u[barra.q[i]]
             
-            """
-            Calcula o vetor f para as barras       
-            """
+            #Calcula o vetor f para as barras       
+            
             barra.f = barra.k @ barra.u + barra.fep
 
             if barra.noi.Tx:
@@ -445,13 +482,14 @@ class Estrutura:
                 self.R[3*no.num-1] += -no.Mz
 
 class Carregamento_distribuido:
-     
-    def __init__(self, a:float, lw:float, w1:float, w2:float, barra:Barra):
-
+    """Representa as propriedades e parâmetros referente ao objeto carregamento distribuído."""
+    
+    def __init__(self, a:float, lw:float, w1:float, w2:float, barra:Barra) -> None:
         """
-        Cria o objeto carregamento distribuido
+        Instancia um objeto da classe Carregamento_distribuido
 
-        Argumentos:
+
+        Args:
 
             a: distância do nó inicial da barra até o inicio do carregamento
             lw: comprimento do carregamento
@@ -466,10 +504,9 @@ class Carregamento_distribuido:
         self.w2 = w2
         self.barra = barra
         
-    def calcula_fepl(self) -> float:
-        """
-        Calcula o vetor de forças de engastamento perfeito no sistema local da barra
-        """
+    def calcula_fepl(self) -> None:
+        
+        #Calcula o vetor de forças de engastamento perfeito no sistema local da barra
 
         L = self.barra.L
         b = L - self.lw - self.a
@@ -490,38 +527,37 @@ class Carregamento_distribuido:
         self.barra.fepl[4] += rb
         self.barra.fepl[5] += mb
 
-    def calcula_fep(self) -> float:
-        """
-        Transforma o vetor de forças de engastamento perfeito no sistema local para o global na barra
-        """
+    def calcula_fep(self) -> None:
+        
+        #Transforma o vetor de forças de engastamento perfeito no sistema local para o global na barra        
 
         self.barra.fep = np.linalg.inv(self.barra.r)@ self.barra.fepl
 
 class Carregamento_pontual:
+    """Representa as propriedades e parâmetros referente ao objeto carregamento pontual."""
    
-    def __init__(self, a:float, Px:float, Py:float, barra:Barra):
-        
+    def __init__(self, a:float, Px:float, Py:float, barra:Barra) -> None:
         """
-        Cria o objeto carregamento pontual
+        Instancia um objeto da classe Carregamento_pontual
 
-        Argumentos:
+
+        Args:
 
             a: distância do nó inicial da barra até o ponto de aplicação da força
             Px: componente x da força
             Py: componente y da força
             barra: objeto barra
         """
-
+        
         self.a = a
         self.Px = Px
         self.Py = Py
         self.barra = barra
 
-    def calcula_fepl(self) -> float:
-        """
-        Calcula o vetor de forças de engastamento perfeito no sistema local da barra
-        """
-
+    def calcula_fepl(self) -> None:
+        
+        #Calcula o vetor de forças de engastamento perfeito no sistema local da barra
+        
         L = self.barra.L
         b = L - self.a
         sa = L + 2*self.a
@@ -541,21 +577,21 @@ class Carregamento_pontual:
         self.barra.fepl[4] += rb
         self.barra.fepl[5] += mb
 
-    def calcula_fep(self) -> float:
-        """
-        Transforma o vetor de forças de engastamento perfeito no sistema local para o global na barra
-        """
+    def calcula_fep(self) -> None:
+    
+        #Transforma o vetor de forças de engastamento perfeito no sistema local para o global na barra
 
         self.barra.fep = np.linalg.inv(self.barra.r)@ self.barra.fepl
 
 class Modelo:
+    """Representa as propriedades e parâmetros referente ao objeto modelo."""
 
-    def __init__(self, bw:float, h:float, l:float, lf:float, a:float, b:float, c:float, ap1:float, ap2:float, P:float, w:float):
-
+    def __init__(self, bw:float, h:float, l:float, lf:float, a:float, b:float, c:float, ap1:float, ap2:float, P:float, w:float) -> None:
         """
-        Inicializa o modelo estrutural
+        Instancia um objeto da classe Modelo
 
-        Argumentos:
+
+        Args:
 
             bw: largura viga
             h: altura da viga
@@ -584,9 +620,8 @@ class Modelo:
         self.nos = None
         self.barras = None
 
-        """
-        Definição dos nós
-        """
+        #Definição dos nós
+        
         no1 = No(1, 0.0, 0.0)
         no2 = No(2, self.ap1/2.0, 0.0)
         no3 = No(3, self.ap1/2.0 + self.lf - self.b/2.0 - self.bw/2.0, 0.0)
@@ -599,9 +634,8 @@ class Modelo:
         no10 = No(10, self.ap1/2.0 + self.l + self.ap2/2.0, 0.0)
         self.nos = [no1, no2, no3, no4, no5, no6, no7, no8, no9, no10]
 
-        """
-        Aplicação das restrições nodais
-        """
+        #Aplicação das restrições nodais
+        
         no1.Tx = True
         no1.Ty = True
         no1.Rz = True
@@ -609,9 +643,8 @@ class Modelo:
         no10.Ty = True
         no10.Rz = True
 
-        """
-        Definição das barras e propriedades
-        """
+        #Definição das barras e propriedades
+    
         E = 280000.0
         I1 = self.bw*self.h**3/12.0
         A1 = self.bw*self.h
@@ -625,9 +658,8 @@ class Modelo:
         I4 = I1*1000
         A4 = A1*1000
 
-        """
-        Ordem dos nós na definição das barras de ser sempre da esquerda para direita ou de baixo para cima
-        """
+        #Ordem dos nós na definição das barras de ser sempre da esquerda para direita ou de baixo para cima
+
         barra1 = Barra(1,no1,no2,E,A1,I1)
         barra2 = Barra(2,no2,no3,E,A1,I1)
         barra3 = Barra(3,no4,no7,E,A2,I2)
@@ -640,16 +672,14 @@ class Modelo:
         barra10 = Barra(10,no6,no8,E,A4,I4) 
         self.barras = [barra1, barra2, barra3, barra4, barra5, barra6, barra7, barra8, barra9, barra10]
 
-        """
-        Definição dos carregamentos nas barras
-        """
+        #Definição dos carregamentos nas barras
+        
         carregamento1 = Carregamento_distribuido(0.0,self.lf-(self.b/2)-(self.bw/2),self.w,self.w,barra2)
         carregamento2 = Carregamento_distribuido(0.0,self.b+self.bw,self.w,self.w,barra4)
         carregamento3 = Carregamento_distribuido(0.0,self.l-self.lf-(self.b/2)-(self.bw/2),self.w,self.w,barra5)
         
-        """
-        Calcula as forças de engastamento perfeito
-        """
+        #Calcula as forças de engastamento perfeito
+    
         carregamento1.calcula_fepl()
         carregamento1.calcula_fep()
         carregamento2.calcula_fepl()
@@ -657,9 +687,8 @@ class Modelo:
         carregamento3.calcula_fepl()
         carregamento3.calcula_fep()
         
-        """
-        Define a estrutura, calcula os resultados de deslocamentos, solicitações internas e reações
-        """
+        #Define a estrutura, calcula os resultados de deslocamentos, solicitações internas e reações
+    
         portico = Estrutura(self.nos,self.barras)
         portico.monta_k()
         print("k")
@@ -707,7 +736,7 @@ class Modelo:
         print("reacoes")
         print_vetor(portico.R)
 
-def print_matriz(m):
+def print_matriz(m) -> None:
     l, c = m.shape
 
     tamanho_colunas = []
@@ -732,7 +761,7 @@ def print_matriz(m):
         print(linha)
 
 
-def print_vetor(v):
+def print_vetor(v) -> None:
     def fmt(n):
         if abs(n) < 0.06 or abs(n) > 1e6:
             return f'{n:#.2g}'
