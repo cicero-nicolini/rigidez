@@ -291,6 +291,7 @@ class Barra:
         N = np.array([self.fl[0], self.fl[3]])
         Md = M*γq
         Nd = N*γq
+        e0 = M/N
 
         xlim = (self.concreto.εcu*self.secao.d)/(self.concreto.εyd+self.concreto.εcu)
 
@@ -299,37 +300,63 @@ class Barra:
         if self.concreto.fck > 50 and self.concreto.fck <= 90:
             if xlim > 0.35*self.secao.d:
                 xlim = 0.35*self.secao.d
+        Mdlim = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*xlim*self.concreto.λ*(self.secao.d - self.concreto.λ*xlim/2.0)
 
         for i in N:
+
+            Rcc = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ*self.x[i]
+
             if N[i] == 0:
-                Mdlim = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*xlim*self.concreto.λ(self.secao.d-self.concreto.λ*xlim/2.0)
                 if Md[i] > Mdlim:
                     self.x[i] = (self.secao.d - math.sqrt(self.secao.d**2-2.0*Md[i]/(self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b)))/self.concreto.λ
-                    self.ASL[i] = (self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.x[i]*self.concreto.λ)/self.aco.fyd
+                    self.ASL[i] = Rcc/self.aco.fyd
                 else:
                     self.x[i] = xlim
                     ε2 = self.concreto.εcu*(1-(self.secao.d_linha/self.x[i]))
                     if ε2 > self.aco.εyd:
-                        σ2: float = self.aco.fyd
+                        σ2 = self.aco.fyd
                     else:
-                        σ2: float = self.aco.Es*ε2
-                    self.ASL2[i] = Md[i] - self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.x[i]*self.concreto.λ*(self.secao.d - (self.concreto.λ*self.x[i]/2.0))
-                    self.ASL[i] = (self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.x[i]*self.concreto.λ + self.ASL2[i]*σ2)/self.aco.fyd
+                        σ2 = self.aco.Es*ε2
+                    self.ASL2[i] = Md[i] - Rcc*(self.secao.d - (self.concreto.λ*self.x[i]/2.0))
+                    self.ASL[i] = (Rcc + self.ASL2[i]*σ2)/self.aco.fyd
+
+            if N[i] > 0:
+                if e0[i] >= (self.secao.d-self.secao.d_linha)/2.0:
+                    # flexo tração com grande excentricidade (domínio 2 ou 3)
+                    e1 = e0 - (self.secao.d-self.secao.d_linha)/2.0
+                    self.x[i] = xlim
+                    if Nd[i]*e1 <= Mdlim:
+                        #armadura simples
+                        a = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ**2/2.0
+                        b = -self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.secao.d*self.concreto.λ
+                        c = Nd[i]*e1
+                        delta = b**2-4*a*c
+                        x1 = (-b+math.sqrt(delta))/(2*a)
+                        x2 = (-b-math.sqrt(delta))/(2*a)
+                        if x1 > 0 and x1 <= xlim:
+                            self.x[i] = x1
+                        if x2 > 0 and x2 <= xlim:
+                            self.x[i] = x2
+                        self.ASL[i] = (Rcc + Nd[i])/(self.aco.fyd)
+                    else:
+                        #armadura dupla
+                        ε2 = self.concreto.εcu*self.x[i]-self.secao.d_linha/self.x[i]
+                        if ε2 > self.aco.εyd:
+                            σ2 = self.aco.fyd
+                        else:
+                            σ2 = self.aco.Es*ε2
+                        self.ASL2[i] = (Nd[i]*e1 - Mdlim)/(σ2*(self.secao.d-self.secao.d_linha))
+                        self.ASL[i] = (Nd[i] + self.ASL2[i]*σ2 + Rcc)/(self.aco.fyd)
+                else:
+                    # flexo tração com pequena excentricidade (domínio 1)
+                    e1 = (self.secao.d-self.secao.d_linha)/2.0 - e0[i]
+                    e2 = (self.secao.d-self.secao.d_linha)/2.0 + e0[i]
+                    σ1 = self.aco.fyd
+                    σ2 = σ1
+                    self.ASL[i] = (Nd[i]*e2)/(σ1*(self.secao.d-self.secao.d_linha))
+                    self.ASL2[i] = (Nd[i]*e1)/(σ2*(self.secao.d-self.secao.d_linha))
 
 
-
-    
-
-
-
-
-
-
-
-
-            
-
-        
       
 class Estrutura:
     """Representa as propriedades e parâmetros referente ao objeto estrutura."""
