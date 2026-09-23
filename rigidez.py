@@ -209,20 +209,23 @@ class Barra:
         self.calcula_r()
         
     def comprimento_barra(self) -> None:
+        """Calcula o comprimento da barra."""
+
         dx = self.noj.x - self.noi.x
         dy = self.noj.y - self.noi.y
         self.L = math.sqrt( dx * dx + dy * dy )
 
     def calcula_klocal(self) -> None:
+        """Calcula a rigidez da barra no sistema local da barra."""
 
-        #Calcula matriz de rigidez no sistema local para a barra      
-        
+        # Calculando os termos da matriz de rigidez  
         a1 = self.E*self.A/self.L
         a2 = (12.0*self.E*self.I)/self.L**3
         a3 = (6.0*self.E*self.I)/self.L**2
         a4 = (4.0*self.E*self.I)/self.L
         a5 = (2.0*self.E*self.I)/self.L
 
+        # Preenchendo a matriz de rigidez local
         self.kl[0,0] = a1
         self.kl[0,3] = -a1
         self.kl[1,1] = a2
@@ -246,14 +249,15 @@ class Barra:
         self.kl[5,4] = self.kl[4,5]
 
     def calcula_r(self) -> None:
-        
-        #Calcula matriz de rotação para a barra       
+        """Calcula matriz de rotação para a barra."""        
 
+        # Calculando termos da matriz de rotação
         dx = self.noj.x - self.noi.x
         dy = self.noj.y - self.noi.y
         s = dy/self.L
         c = dx/self.L
 
+        # Preenchendo a matriz de rotação
         self.r[0,0] = c
         self.r[1,0] = -s
         self.r[0,1] = s
@@ -266,70 +270,103 @@ class Barra:
         self.r[5,5] = 1 
 
     def calcula_k(self) -> None:
-        
-        #Monta matriz de rigidez no sistema global para a barra      
+        """Monta matriz de rigidez no sistema global para a barra."""          
 
         self.k = np.linalg.inv(self.r)@ self.kl @ self.r
 
     def monta_q(self) -> None:
-        
-        #Monta vetor de correspondencia de graus de liberdade da barra      
+        """Monta a função vetor q de correspondencia da barra."""       
 
-        z = -1
+        # Matriz que guarda a numeração dos nós
         M = np.array([self.noi.num, self.noj.num])
+
+        # Monta o vetor de correspondencia q de acordo com a referncia
+        # [Soriano, 2005, p. 76] considerando g = 3
+        z = -1                  # z = -1 para ajustar a contagem
         for j in range(0,2):
             for jk in range(0,3):
                 z = z + 1
                 self.q[z] = 3*(M[j]-1)+jk
 
     def calcula_vetor_ASL(self) -> None:
+        """Calcula vetor x, vetor ASL e ASL2 para a barra."""
 
-        #Calcula vetor x, vetor ASL e ASL2 para a barra     
-
+        # Definindo o coeficiente majorador de esforços
         γq = 1.4
+
+        # Guardando as solicitações (M, N) dos nós extremos da barra
         M = np.array([self.fl[2], self.fl[5]])
         N = np.array([self.fl[0], self.fl[3]])
+
+        # Majorando os esforços
         Md = M*γq
         Nd = N*γq
         e0 = M/N
 
+        # Calculando o xlim
         xlim = (self.concreto.εcu*self.secao.d)/(self.concreto.εyd+self.concreto.εcu)
 
+        # Verificando o xlim de acordo com o limite de ductilidade conforme  
+        # a referencia [NBR6118:2026, p. x]
         if xlim > 0.45*self.secao.d:
             xlim = 0.45*self.secao.d
+
         if self.concreto.fck > 50 and self.concreto.fck <= 90:
             if xlim > 0.35*self.secao.d:
                 xlim = 0.35*self.secao.d
+
+        # Calculando o Mdlim
         Mdlim = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*xlim*self.concreto.λ*(self.secao.d - self.concreto.λ*xlim/2.0)
 
+        # Para cada solicitação N do nó i
         for i in N:
 
+            # Resultante de compressão do concreto
             Rcc = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ*self.x[i]
+
+            # Braço de alavanca
             z = self.secao.d - (self.concreto.λ*self.x[i]/2.0)
 
+            # Verificação do tipo de flexão: simples ou composta
             if N[i] == 0:
-                #flexão simples
+
+                # Flexão simples
+                
                 if Md[i] < Mdlim:
+                    # Domínio 2 ou 3
                     self.x[i] = (self.secao.d - math.sqrt(self.secao.d**2-2.0*Md[i]/(self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b)))/self.concreto.λ
                     self.ASL[i] = Rcc/self.aco.fyd
+
                 else:
+                    # Limite do domínio 3
                     self.x[i] = xlim
                     ε2 = self.concreto.εcu*(1-(self.secao.d_linha/self.x[i]))
+
+                    # Verificando o regime da armadura de compressão
                     if ε2 > self.aco.εyd:
                         σ2 = self.aco.fyd
                     else:
                         σ2 = self.aco.Es*ε2
+
+                    # Calculo da área de aço de compressão e tração
                     self.ASL2[i] = Md[i] - Rcc*z
                     self.ASL[i] = (Rcc + self.ASL2[i]*σ2)/self.aco.fyd
 
             if N[i] > 0:
-                #flexo tração
+                # Flexo-tração
+                
+                # Verificando regime da flexo-tração
                 if e0[i] >= (self.secao.d-self.secao.d_linha)/2.0:
-                    #flexo tração com grande excentricidade (domínio 2 ou 3)
+                    # Flexo-tração com grande excentricidade (domínio 2 ou 3)
+                    
+                    # Calculo da excentricidade da armadura 1
                     e1 = e0 - (self.secao.d-self.secao.d_linha)/2.0
-                    self.x[i] = xlim
+
+                    # Verificando o tipo de armadura
                     if Nd[i]*e1 <= Mdlim:
-                        #armadura simples
+                        # Armadura simples
+                        
+                        # Resolvendo o sistema de equilíbrio para encontrar o x
                         a = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ**2/2.0
                         b = -self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.secao.d*self.concreto.λ
                         c = Nd[i]*e1
@@ -340,14 +377,20 @@ class Barra:
                             self.x[i] = x1
                         if x2 >= 0 and x2 <= xlim:
                             self.x[i] = x2
+
+                        # Calculo da área de aço armadura 1
                         self.ASL[i] = Nd[i] + (Rcc/self.aco.fyd)
                     else:
-                        #armadura dupla
+                        # Armadura dupla
+                        
+                        # Calculo da tensão na armadura 2
                         ε2 = self.concreto.εcu*(self.x[i]-self.secao.d_linha/self.x[i])
                         if ε2 > self.aco.εyd:
                             σ2 = self.aco.fyd
                         else:
                             σ2 = self.aco.Es*ε2
+
+                        # Calculo da armadura 2
                         self.ASL2[i] = (Nd[i]*e1 - Mdlim)/(σ2*(self.secao.d-self.secao.d_linha))
                         self.ASL[i] = (Nd[i] + self.ASL2[i]*σ2 + Rcc)/(self.aco.fyd)
                 else:
@@ -389,7 +432,7 @@ class Barra:
                             #armadura composta
                             x[i] = xlim
                             ε2 = self.concreto.εcu*(xlim-self.secao.d_linha/xlim)
-                            if ε2 < self.aco.εyd
+                            if ε2 < self.aco.εyd:
                                 σ2 = self.aco.Es*ε2
                             else:
                                 σ2 = self.aco.fyd
@@ -403,6 +446,7 @@ class Barra:
                         delta = b**2-4*a*c
                         x1 = (-b+math.sqrt(delta))/(2*a)
                         x2 = (-b-math.sqrt(delta))/(2*a)
+
                         if x1 >  xlim and x1 <= self.secao.h:
                             self.x[i] = x1
                         if x2 >  xlim and x2 <= self.secao.h:
@@ -418,10 +462,10 @@ class Barra:
                         self.ASL2[i] = (Nd[i] - Rcc)/σ2
                     else:
                         #compressão composta
-                        x = 
+                        x = 9999999
                         ε1 = 2/1000
                         ε2 = ε1
-                        if ε2 <= self.aco.εyd
+                        if ε2 <= self.aco.εyd:
                             σ2 = self.aco.Es*ε2
                         else:
                             σ2 = self.aco.fyd
