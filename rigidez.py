@@ -35,13 +35,13 @@ class Concreto:
         if αE not in [0.7, 0.9, 1.0, 1.2]:
             raise ValueError("αE deve ser 0.7, 0.9, 1.0 ou 1.2")
         
-        self.fck = fck 
+        self.fck = fck
         self.γc = γc
         self.αE = αE
 
     @property
     def fcd(self) -> float:
-        fcd = self.fck/self.γc
+        fcd = (self.fck/self.γc)/10 #Compatibilização de unidades para testes de MPa para kN/cm²
         return fcd
     
     @property
@@ -89,7 +89,7 @@ class Concreto:
 class Aco:
     """Representa as propriedades e parâmetros referente ao aço."""
 
-    def __init__(self, fyk:float, γs:float = 1.15, Es:float = 210000.0) -> None:
+    def __init__(self, fyk:float, γs:float = 1.15, Es:float = 21000.0) -> None:
         """
         Instancia um objeto da classe Aco
 
@@ -103,16 +103,16 @@ class Aco:
 
         self.fyk = fyk 
         self.γs = γs
-        self.Es = Es
+        self.Es = Es #Unidade compatibilizada para testes de MPa para kN/cm²
     
     @property
     def fyd(self) -> float:
-        fyd = self.fyk/self.γs
+        fyd = (self.fyk/self.γs)/10 #Compatibilização de unidades para testes de MPa para kN/cm²
         return fyd
 
     @property
     def εyd(self) -> float:
-        fyd = self.fyk/self.γs
+        fyd = (self.fyk/self.γs)/10 #Compatibilização de unidades para testes de MPa para kN/cm²
         εyd = fyd/self.Es
         return εyd
 
@@ -282,47 +282,56 @@ class Barra:
                 z = z + 1
                 self.q[z] = 3*(M[j]-1)+jk
 
-    def calcula_vetor_ASL(self) -> None:
+    def calcula_vetor_ASL(self, M, N) -> None:
 
-        #Calcula vetor x, vetor ASL e ASL2 para a barra     
+        #Calcula vetor x, vetor ASL e ASL2 para a barra
 
         γq = 1.4
-        M = np.array([self.fl[2], self.fl[5]])
-        N = np.array([self.fl[0], self.fl[3]])
+        #M = np.array([self.fl[2], self.fl[5]])
+        #N = np.array([self.fl[0], self.fl[3]])
         Md = M*γq
         Nd = N*γq
-        e0 = M/N
+        #e0 = M/N pode resultar em divisao por zero se N==0, entao colocar somente na rotina onde será usado 
 
-        xlim = (self.concreto.εcu*self.secao.d)/(self.concreto.εyd+self.concreto.εcu)
+        xlim = (self.concreto.εcu*self.secao.d)/(self.aco.εyd+self.concreto.εcu)
 
         if xlim > 0.45*self.secao.d:
             xlim = 0.45*self.secao.d
         if self.concreto.fck > 50 and self.concreto.fck <= 90:
             if xlim > 0.35*self.secao.d:
                 xlim = 0.35*self.secao.d
+
         Mdlim = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*xlim*self.concreto.λ*(self.secao.d - self.concreto.λ*xlim/2.0)
 
-        for i in N:
+        for i, n in enumerate(N):
 
-            Rcc = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ*self.x[i]
-            z = self.secao.d - (self.concreto.λ*self.x[i]/2.0)
+            #Rcc = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ*self.x[i]
+            #z = self.secao.d - (self.concreto.λ*self.x[i]/2.0)
 
-            if N[i] == 0:
+            if n == 0:
                 #flexão simples
                 if Md[i] < Mdlim:
+                    #armadura simples
                     self.x[i] = (self.secao.d - math.sqrt(self.secao.d**2-2.0*Md[i]/(self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b)))/self.concreto.λ
+                    Rcc = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ*self.x[i]
                     self.ASL[i] = Rcc/self.aco.fyd
                 else:
+                    #armadura dupla
                     self.x[i] = xlim
+                    Rcc = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ*self.x[i]
+                    z = self.secao.d - (self.concreto.λ*self.x[i]/2.0)
                     ε2 = self.concreto.εcu*(1-(self.secao.d_linha/self.x[i]))
+                    print(ε2)
                     if ε2 > self.aco.εyd:
                         σ2 = self.aco.fyd
                     else:
                         σ2 = self.aco.Es*ε2
-                    self.ASL2[i] = Md[i] - Rcc*z
+                    print(σ2)
+                    print(self.aco.Es)
+                    self.ASL2[i] = (Md[i] - Rcc*z)/(σ2*(self.secao.d-self.secao.d_linha))
                     self.ASL[i] = (Rcc + self.ASL2[i]*σ2)/self.aco.fyd
 
-            if N[i] > 0:
+            if n > 0:
                 #flexo tração
                 if e0[i] >= (self.secao.d-self.secao.d_linha)/2.0:
                     #flexo tração com grande excentricidade (domínio 2 ou 3)
@@ -344,6 +353,8 @@ class Barra:
                     else:
                         #armadura dupla
                         ε2 = self.concreto.εcu*(self.x[i]-self.secao.d_linha/self.x[i])
+                        print(self.aco.εyd)
+                        print(ε2)
                         if ε2 > self.aco.εyd:
                             σ2 = self.aco.fyd
                         else:
@@ -359,7 +370,7 @@ class Barra:
                     self.ASL[i] = (Nd[i]*e2)/(σ1*(self.secao.d-self.secao.d_linha))
                     self.ASL2[i] = (Nd[i]*e1)/(σ2*(self.secao.d-self.secao.d_linha))
 
-            if N[i] < 0:
+            if n < 0:
                 #flexo compressão
                 e1 = (self.secao.d-self.secao.d_linha)/2.0 + e0[i]
                 e2 = (self.secao.d-self.secao.d_linha)/2.0 - e0[i]
@@ -389,7 +400,7 @@ class Barra:
                             #armadura composta
                             x[i] = xlim
                             ε2 = self.concreto.εcu*(xlim-self.secao.d_linha/xlim)
-                            if ε2 < self.aco.εyd
+                            if ε2 < self.aco.εyd:
                                 σ2 = self.aco.Es*ε2
                             else:
                                 σ2 = self.aco.fyd
@@ -403,14 +414,14 @@ class Barra:
                         delta = b**2-4*a*c
                         x1 = (-b+math.sqrt(delta))/(2*a)
                         x2 = (-b-math.sqrt(delta))/(2*a)
-                        if x1 >  xlim and x1 <= self.secao.h:
+                        if x1 >  xlim:
                             self.x[i] = x1
-                        if x2 >  xlim and x2 <= self.secao.h:
+                        if x2 >  xlim:
                             self.x[i] = x2
                         if xlim < self.x[i] <= self.secao.h:
                             ε2 = self.concreto.εcu*(self.x[i]-self.secao.d_linha/self.x[i])
-                        #else:
-                            #ε2 = (2/1000)*(self.x[i]-self.secao.d_linha)/(self.x[i]-3*self.secao.h/7)
+                        else:
+                            ε2 = (2/1000)*(self.x[i]-self.secao.d_linha)/(self.x[i]-3*self.secao.h/7)
                         if ε2 < self.aco.εyd:
                             σ2 = self.aco.Es*ε2
                         else:
@@ -418,10 +429,9 @@ class Barra:
                         self.ASL2[i] = (Nd[i] - Rcc)/σ2
                     else:
                         #compressão composta
-                        x = 
                         ε1 = 2/1000
                         ε2 = ε1
-                        if ε2 <= self.aco.εyd
+                        if ε2 <= self.aco.εyd:
                             σ2 = self.aco.Es*ε2
                         else:
                             σ2 = self.aco.fyd
