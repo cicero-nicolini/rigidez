@@ -349,8 +349,6 @@ class Barra:
                         σ2 = self.aco.fyd
                     else:
                         σ2 = self.aco.Es*ε2
-                    print(σ2)
-                    print(self.aco.Es)
                     # Calculo da área de aço de compressão e tração
                     self.ASL2[i] = (Md[i] - Rcc*z)/(σ2*(self.secao.d-self.secao.d_linha))
                     self.ASL[i] = (Rcc + self.ASL2[i]*σ2)/self.aco.fyd
@@ -501,8 +499,7 @@ class Estrutura:
         self.R = np.zeros((self.nnos*3))
               
     def monta_k(self) -> None:
-        
-        #Monta a matriz de rigidez da estrutura       
+        """Monta a matriz de rigidez da estrutura."""        
         
         for barra in self.barras:
             barra.comprimento_barra()
@@ -515,8 +512,7 @@ class Estrutura:
                     self.k[barra.q[j], barra.q[jk]] += barra.k[j,jk]
 
     def monta_k01(self) -> None:
-    
-        #Aplica as condições de contorno na matriz da estrutura para calcular os deslocamentos       
+        """Aplica as condições de contorno na matriz da estrutura para calcular os deslocamentos."""     
     
         self.k01 = self.k
         for no in self.nos:
@@ -537,8 +533,7 @@ class Estrutura:
                 self.k01[gdl,gdl] = 1.0           
         
     def monta_fnos(self) -> None:
-        
-        #Monta vetor de forças necessário para calcular deslocamentos na estrutura      
+        """Monta vetor de forças necessário para calcular deslocamentos na estrutura."""    
 
         for no in self.nos:
             self.fnos[3*no.num-3] = no.Fx
@@ -550,8 +545,7 @@ class Estrutura:
                 self.fnos[barra.q[j]] += -barra.fep[j]
                 
     def aplica_cc_fnos(self) -> None:
-        
-        #Aplica as condições de contorno no vetor fnos para calcular deslocamentos na estrutura       
+        """Aplica as condições de contorno no vetor fnos para calcular deslocamentos na estrutura."""      
     
         for no in self.nos:
             if no.Tx:
@@ -562,14 +556,12 @@ class Estrutura:
                 self.fnos[3*no.num-1] = 0
 
     def calcula_deslocamentos(self) -> None:
-        
-        #Calcula o vetor de deslocamentos da estrutura       
+        """Calcula o vetor de deslocamentos da estrutura."""     
         
         self.u = np.linalg.inv(self.k01)@ self.fnos
 
     def calcula_solicitacoes_internas_nodais(self) -> None:
-        
-        #Calcula as forças no sistema local para as barras = solicitações
+        """Calcula as forças no sistema local para as barras = solicitações."""
         
         for barra in self.barras:
             barra.monta_q()
@@ -588,8 +580,7 @@ class Estrutura:
             barra.fl = barra.r @ barra.f    
 
     def calcula_reacoes(self) -> None:
-        
-        #Calcula um vetor com as reações da estrutura       
+        """Calcula um vetor com as reações da estrutura."""      
         
         for barra in self.barras:
             barra.monta_q()
@@ -650,8 +641,7 @@ class Carregamento_distribuido:
         self.barra = barra
         
     def calcula_fepl(self) -> None:
-        
-        #Calcula o vetor de forças de engastamento perfeito no sistema local da barra
+        """Calcula o vetor de forças de engastamento perfeito no sistema local da barra."""
 
         L = self.barra.L
         b = L - self.lw - self.a
@@ -673,8 +663,7 @@ class Carregamento_distribuido:
         self.barra.fepl[5] += mb
 
     def calcula_fep(self) -> None:
-        
-        #Transforma o vetor de forças de engastamento perfeito no sistema local para o global na barra        
+        """Transforma o vetor de forças de engastamento perfeito no sistema local para o global na barra."""        
 
         self.barra.fep = np.linalg.inv(self.barra.r)@ self.barra.fepl
 
@@ -700,8 +689,7 @@ class Carregamento_pontual:
         self.barra = barra
 
     def calcula_fepl(self) -> None:
-        
-        #Calcula o vetor de forças de engastamento perfeito no sistema local da barra
+        """Calcula o vetor de forças de engastamento perfeito no sistema local da barra."""
         
         L = self.barra.L
         b = L - self.a
@@ -723,8 +711,7 @@ class Carregamento_pontual:
         self.barra.fepl[5] += mb
 
     def calcula_fep(self) -> None:
-    
-        #Transforma o vetor de forças de engastamento perfeito no sistema local para o global na barra
+        """Transforma o vetor de forças de engastamento perfeito no sistema local para o global na barra."""
 
         self.barra.fep = np.linalg.inv(self.barra.r)@ self.barra.fepl
 
@@ -803,7 +790,7 @@ class Modelo:
         I4 = I1*1000
         A4 = A1*1000
 
-        #Ordem dos nós na definição das barras de ser sempre da esquerda para direita ou de baixo para cima
+        #Ordem dos nós na definição das barras deve ser sempre da esquerda para direita ou de baixo para cima
 
         barra1 = Barra(1,no1,no2,E,A1,I1)
         barra2 = Barra(2,no2,no3,E,A1,I1)
