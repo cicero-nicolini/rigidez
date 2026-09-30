@@ -13,7 +13,7 @@ class Concreto:
 
         Args:
 
-            fck: resistência característica do concreto
+            fck: resistência característica do concreto [MPa]
             γc: coeficiente de segurança do concreto
             αE: coeficiente de ajuste do módulo de elasticidade
 
@@ -96,7 +96,7 @@ class Aco:
 
         Args:
 
-            fyk: resistência característica do aço
+            fyk: resistência característica do aço [MPa]
             γs: coeficiente de segurança do aço
             Es: módulo de elasticidade do aço
         """
@@ -301,7 +301,6 @@ class Barra:
         # Majorando os esforços
         Md = M*γq
         Nd = N*γq
-        #e0 = M/N pode resultar em divisao por zero se N==0, entao colocar somente na rotina onde será usado 
 
         # Calculando o xlim
         xlim = (self.concreto.εcu*self.secao.d)/(self.aco.εyd+self.concreto.εcu)
@@ -355,7 +354,8 @@ class Barra:
 
             if n > 0:
                 # Flexo-tração
-                
+                e0 = M/N  # calculo da excentricidade da carga
+               
                 # Verificando regime da flexo-tração
                 if e0[i] >= (self.secao.d-self.secao.d_linha)/2.0:
                     # Flexo-tração com grande excentricidade (domínio 2 ou 3)
@@ -407,6 +407,8 @@ class Barra:
 
             if n < 0:
                 #flexo compressão
+                e0 = M/N        # calculo da excentricidade da carga
+                
                 e1 = (self.secao.d-self.secao.d_linha)/2.0 + e0[i]
                 e2 = (self.secao.d-self.secao.d_linha)/2.0 - e0[i]
                 #verificação da necessidade teórica de armadura
@@ -417,7 +419,7 @@ class Barra:
                     #necessidade de armadura
                     if e2 < 0 or e2 < e2_gp:
                         #flexo compressão com grande excentricidade
-                        x[i] = xlim
+                        self.x[i] = xlim
                         if Nd*e1 <= Mdlim:
                             #armadura simples
                             a = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ**2/2.0
@@ -433,7 +435,7 @@ class Barra:
                             self.ASL[i] = Nd[i] + (Rcc/self.aco.fyd)
                         else:
                             #armadura composta
-                            x[i] = xlim
+                            self.x[i] = xlim
                             ε2 = self.concreto.εcu*(xlim-self.secao.d_linha/xlim)
                             if ε2 < self.aco.εyd:
                                 σ2 = self.aco.Es*ε2
