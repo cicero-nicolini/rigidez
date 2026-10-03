@@ -26,10 +26,18 @@ no1.Tx = True
 no1.Ty = True
 no4.Ty = True
 
+# Definição da seção transversal
+
+secao = Secao("retangular", 0.0262, 0.5114, 2.5e7)
+
+print("secao.A", secao.E)
+print("secao.A", secao.A)
+print("secao.I", secao.I)
+
 # Definição das barras e propriedades
-barra1 = Barra(1.0,no1,no2,2.5e7,1.34e-2,2.92e-4)
-barra2 = Barra(2.0,no2,no3,2.5e7,1.34e-2,2.92e-4)
-barra3 = Barra(3.0,no4,no3,2.5e7,1.34e-2,2.92e-4)
+barra1 = Barra(1.0,no1,no2,secao)
+barra2 = Barra(2.0,no2,no3,secao)
+barra3 = Barra(3.0,no4,no3,secao)
 barras = [barra1, barra2, barra3]
 
 # Definição dos carregamentos nas barras

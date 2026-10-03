@@ -37,12 +37,16 @@ no3.Tx = True
 no3.Ty = True
 no3.Rz = True
 
+# Definição da seção transversal
+
+secao = Secao("retangular", 10.0, 20.0, 2.5e2)
+
 # Definição das barras e propriedades
-barra1 = Barra(1.0,no1,no4,2.5e2,200.0,6670.0)
-barra2 = Barra(2.0,no2,no5,2.5e2,200.0,6670.0)
-barra3 = Barra(3.0,no3,no6,2.5e2,200.0,6670.0)
-barra4 = Barra(4.0,no4,no5,2.5e2,200.0,6670.0)
-barra5 = Barra(5.0,no5,no6,2.5e2,200.0,6670.0)
+barra1 = Barra(1.0,no1,no4,secao)
+barra2 = Barra(2.0,no2,no5,secao)
+barra3 = Barra(3.0,no3,no6,secao)
+barra4 = Barra(4.0,no4,no5,secao)
+barra5 = Barra(5.0,no5,no6,secao)
 barras = [barra1, barra2, barra3, barra4, barra5]
 
 # Definição dos carregamentos nas barras

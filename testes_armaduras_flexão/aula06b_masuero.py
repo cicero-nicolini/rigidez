@@ -27,11 +27,11 @@ secao = Secao("viga", 20, 40, concreto.Eci, d = 35, d_linha = 5)
 viga = Barra(1, no1, no2, secao, concreto, aco)
 
 # Esforços para teste
-M1 = np.array([9000.0, 0.0])
-N1 = np.array([0, 0])
+M = np.array([9000.0])
+N = np.array([0.0])
 
 # Passando esforços para metodo do objeto barra que calcula armadura e armazena no vetor ASL e ASL2
-viga.calcula_vetor_ASL(M1, N1)
+viga.calcula_vetor_ASL(M, N)
 
 # Visualização de resultados das areas de armaduras do objeto barra
 print(viga.ASL2)
@@ -44,15 +44,17 @@ print("#########################################################################
 #flexão simples, armadura dupla e concreto grupo 2, unico parâmetro que muda é o esforço M
 
 # Definição da barra para obtencao de resultados
-viga2 = Barra(1, no1, no2, secao, concreto, aco)
+viga = Barra(1, no1, no2, secao, concreto, aco)
 
 # Esforços para teste
-M2 = np.array([18000.0, 0.0])
-N2 = np.array([0.0, 0.0])
+M = np.array([18000.0])
+N = np.array([0.0])
 
 # Passando esforços para metodo do objeto barra que calcula armadura e armazena no vetor ASL e ASL2
-viga2.calcula_vetor_ASL(M2, N2)
+viga.calcula_vetor_ASL(M, N)
 
 # Visualização de resultados das areas de armaduras do objeto barra
-print(viga2.ASL2)
-print(viga2.ASL)
+print(viga.ASL2)
+print(viga.ASL)
+
+

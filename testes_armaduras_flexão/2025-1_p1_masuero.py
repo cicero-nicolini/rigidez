@@ -27,11 +27,11 @@ secao = Secao("viga", 19, 50, concreto.Eci, d = 43, d_linha = 5)
 viga = Barra(1, no1, no2, secao, concreto, aco)
 
 # Esforços para teste
-M1 = np.array([25000.0, 0.0])
-N1 = np.array([0, 0])
+M = np.array([25000.0])
+N = np.array([0.0])
 
 # Passando esforços para metodo do objeto barra que calcula armadura e armazena no vetor ASL e ASL2
-viga.calcula_vetor_ASL(M1, N1)
+viga.calcula_vetor_ASL(M, N)
 
 # Visualização de resultados das areas de armaduras do objeto barra
 print(viga.ASL2)

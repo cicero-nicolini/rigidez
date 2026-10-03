@@ -53,9 +53,9 @@ class Concreto:
     
     @property
     def Eci(self) -> float:
-        Eci = 5600*self.αE*math.sqrt(self.fck)
+        Eci = (5600*self.αE*math.sqrt(self.fck))/10 #Compatibilização de unidades para testes de MPa para kN/cm²
         if 50 < self.fck <= 90:
-            Eci = 21.5*10**3*self.αE*((self.fck/10)+1.25)**(1/3)
+            Eci = (21.5*10**3*self.αE*((self.fck/10)+1.25)**(1/3))/10 #Compatibilização de unidades para testes de MPa para kN/cm²
         return Eci
 
     @property
@@ -219,11 +219,11 @@ class Barra:
         """Calcula a rigidez da barra no sistema local da barra."""
 
         # Calculando os termos da matriz de rigidez  
-        a1 = self.E*self.A/self.L
-        a2 = (12.0*self.E*self.I)/self.L**3
-        a3 = (6.0*self.E*self.I)/self.L**2
-        a4 = (4.0*self.E*self.I)/self.L
-        a5 = (2.0*self.E*self.I)/self.L
+        a1 = self.secao.E*self.secao.A/self.L
+        a2 = (12.0*self.secao.E*self.secao.I)/self.L**3
+        a3 = (6.0*self.secao.E*self.secao.I)/self.L**2
+        a4 = (4.0*self.secao.E*self.secao.I)/self.L
+        a5 = (2.0*self.secao.E*self.secao.I)/self.L
 
         # Preenchendo a matriz de rigidez local
         self.kl[0,0] = a1
@@ -360,6 +360,7 @@ class Barra:
                
                 # Verificando regime da flexo-tração
                 if e0[i] >= (self.secao.d-self.secao.d_linha)/2.0:
+                    # Flexo-tração com grande excentricidade (domínio 2 ou 3)
                     print("Flexo-tração com grande excentricidade (domínio 2 ou 3)")
                     
                     # Calculo da excentricidade da armadura 1
@@ -746,7 +747,7 @@ class Carregamento_pontual:
 class Modelo:
     """Representa as propriedades e parâmetros referente ao objeto modelo."""
 
-    def __init__(self, bw:float, h:float, l:float, lf:float, a:float, b:float, c:float, ap1:float, ap2:float, P:float, w:float) -> None:
+    def __init__(self, bw:float, h:float, l:float, lf:float, a:float, b:float, c:float, ap1:float, ap2:float, w:float, fck:float, fyk:float, αE:float = 1.0, d:float = None, d_linha:float = None) -> None:
         """
         Instancia um objeto da classe Modelo
 
@@ -755,6 +756,8 @@ class Modelo:
 
             bw: largura viga
             h: altura da viga
+            d: altura útil da armadura tracionada
+            d_linha: altura útil da armadura comprimida 
             l: comprimento da viga
             lf: comprimento até centro da abertura
             a: altura da abertura
@@ -762,12 +765,16 @@ class Modelo:
             c: espessura do banzo inferior na regiao da abertura
             ap1: largura pilar esquerdo
             ap2: largura pilar direito
-            P: carregamento pontual
             w: modulo carregamento distribuido
+            fck: resistência característica do concreto [MPa]
+            fyk: resistência característica do aço [MPa]
+            αE: coeficiente de ajuste do módulo de elasticidade
         """
 
         self.bw = bw
         self.h = h
+        self.d = d
+        self.d_linha = d_linha
         self.l = l
         self.lf = lf
         self.a = a
@@ -775,8 +782,10 @@ class Modelo:
         self.c = c
         self.ap1 = ap1
         self.ap2 = ap2
-        self.P = P
         self.w = w
+        self.fck = fck
+        self.fyk = fyk
+        self.αE = αE
         self.nos = None
         self.barras = None
 
@@ -803,33 +812,33 @@ class Modelo:
         no10.Ty = True
         no10.Rz = True
 
+        # Definição dos materiais para uma seção de concreto armado
+        concreto = Concreto(self.fck, self.αE)
+        aco = Aco(self.fyk)
+
+        # Definição da seção transversal
+
+        secao1 = Secao("retangular", self.bw, self.h, concreto.Eci)
+        secao2 = Secao("retangular", self.bw, self.c, concreto.Eci)
+        secao3 = Secao("retangular", self.bw, self.h-self.a-self.c, concreto.Eci)
+        secao4 = Secao("retangular", self.bw, self.h, concreto.Eci)
+
+        secao4.I = secao4.I * 1000
+        secao4.A = secao4.A * 1000
+
         #Definição das barras e propriedades
-    
-        E = 280000.0
-        I1 = self.bw*self.h**3/12.0
-        A1 = self.bw*self.h
-
-        I2 = self.bw*self.c**3/12.0
-        A2 = self.bw*self.c
-
-        I3 = self.bw*(self.h-self.a-self.c)**3/12.0
-        A3 = self.bw*(self.h-self.a-self.c)
-
-        I4 = I1*1000
-        A4 = A1*1000
-
         #Ordem dos nós na definição das barras deve ser sempre da esquerda para direita ou de baixo para cima
 
-        barra1 = Barra(1,no1,no2,E,A1,I1)
-        barra2 = Barra(2,no2,no3,E,A1,I1)
-        barra3 = Barra(3,no4,no7,E,A2,I2)
-        barra4 = Barra(4,no5,no8,E,A3,I3)
-        barra5 = Barra(5,no6,no9,E,A1,I1)
-        barra6 = Barra(6,no9,no10,E,A1,I1)
-        barra7 = Barra(7,no4,no3,E,A4,I4)
-        barra8 = Barra(8,no3,no5,E,A4,I4)
-        barra9 = Barra(9,no7,no6,E,A4,I4)
-        barra10 = Barra(10,no6,no8,E,A4,I4) 
+        barra1 = Barra(1,no1,no2,secao1,concreto,aco)
+        barra2 = Barra(2,no2,no3,secao1,concreto,aco)
+        barra3 = Barra(3,no4,no7,secao2,concreto,aco)
+        barra4 = Barra(4,no5,no8,secao3,concreto,aco)
+        barra5 = Barra(5,no6,no9,secao1,concreto,aco)
+        barra6 = Barra(6,no9,no10,secao1,concreto,aco)
+        barra7 = Barra(7,no4,no3,secao4,concreto,aco)
+        barra8 = Barra(8,no3,no5,secao4,concreto,aco)
+        barra9 = Barra(9,no7,no6,secao4,concreto,aco)
+        barra10 = Barra(10,no6,no8,secao4,concreto,aco) 
         self.barras = [barra1, barra2, barra3, barra4, barra5, barra6, barra7, barra8, barra9, barra10]
 
         #Definição dos carregamentos nas barras
