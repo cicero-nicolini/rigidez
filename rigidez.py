@@ -357,7 +357,7 @@ class Barra:
             if n > 0:
                 # Flexo-tração
                 e0 = M/N  # calculo da excentricidade da carga
-               
+                
                 # Verificando regime da flexo-tração
                 if e0[i] >= (self.secao.d-self.secao.d_linha)/2.0:
                     # Flexo-tração com grande excentricidade (domínio 2 ou 3)
@@ -430,18 +430,19 @@ class Barra:
                 if e2_0 > e2:
                     # Necessidade de armadura
                     print("Necessidade de armadura")
-
+                    
                     if e2 < 0 or e2 < e2_gp:
                         # Flexo-compressão com grande excentricidade
                         print("Flexo-compressão com grande excentricidade")
                         self.x[i] = xlim
-
+                       
                         if abs(Nd[i])*e1 <= Mdlim:
                             # armadura simples
                             print("armadura simples")
                             a = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ**2/2.0
                             b = -self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.secao.d*self.concreto.λ
                             c = abs(Nd[i])*e1
+                            
                             delta = b**2-4*a*c
                             x1 = (-b+math.sqrt(delta))/(2*a)
                             x2 = (-b-math.sqrt(delta))/(2*a)
@@ -449,8 +450,9 @@ class Barra:
                                 self.x[i] = x1
                             if x2 >= 0 and x2 <= xlim:
                                 self.x[i] = x2
+                            
                             Rcc = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ*self.x[i]
-                            self.ASL[i] = abs(Nd[i]) + (Rcc/self.aco.fyd)
+                            self.ASL[i] = (Rcc-abs(Nd[i]))/self.aco.fyd
                         else:
                             # armadura dupla
                             print("armadura dupla")
