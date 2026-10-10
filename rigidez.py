@@ -396,8 +396,7 @@ class Barra:
                         
                         # Calculo da tensão na armadura 2
                         ε2 = self.concreto.εcu*(self.x[i]-self.secao.d_linha/self.x[i])
-                        print(self.aco.εyd)
-                        print(ε2)
+                    
                         if ε2 > self.aco.εyd:
                             σ2 = self.aco.fyd
                         else:
@@ -427,10 +426,13 @@ class Barra:
                 e2_0 = abs(Nd[i])/(1.7*self.concreto.fcd*self.secao.b) - self.secao.d_linha
                 e2_gp = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ*xlim*((self.concreto.λ*xlim/2.0)-self.secao.d_linha)/abs(Nd[i])
 
-                if e2_0 > e2:
+                if e2_0 <= e2:
+                    # Não há necessidade de armadura
+                    print("Não há necessidade teórica de armadura")
+                else:
                     # Necessidade de armadura
                     print("Necessidade de armadura")
-                    
+                       
                     if e2 < 0 or e2 < e2_gp:
                         # Flexo-compressão com grande excentricidade
                         print("Flexo-compressão com grande excentricidade")
@@ -503,7 +505,7 @@ class Barra:
                                 σ2 = self.aco.fyd
                             σ1 = σ2
                             self.ASL[i] = (abs(Nd[i])*e2 - self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.secao.h*(self.secao.h*0.5-self.secao.d_linha))/(σ1*(self.secao.d-self.secao.d_linha))
-                            self.ASL2[i] = (abs(Nd[i])*e1 - self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.secao.h*(self.secao.h*0.5-self.secao.d))/(σ2*(self.secao.d-self.secao.d_linha))
+                            self.ASL2[i] = (abs(Nd[i])*e1 - self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.secao.h*(self.secao.d - self.secao.h*0.5))/(σ2*(self.secao.d-self.secao.d_linha))
                              
 class Estrutura:
     """Representa as propriedades e parâmetros referente ao objeto estrutura."""
