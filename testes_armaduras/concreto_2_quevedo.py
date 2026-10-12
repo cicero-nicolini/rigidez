@@ -21,7 +21,7 @@ no2 = No(2,100.0,75.0)
 
 # Definição dos materiais para uma seção de concreto armado
 concreto = Concreto(36)
-aco = Aco(250)
+aco = Aco(250, 250)
 
 # Definição da seção transversal
 secao = Secao("viga", 35, 50, concreto.Eci, d = 45, d_linha = 5)
@@ -53,7 +53,7 @@ no2 = No(2,100.0,75.0)
 
 # Definição dos materiais para uma seção de concreto armado
 concreto = Concreto(36)
-aco = Aco(250)
+aco = Aco(250, 250)
 
 # Definição da seção transversal
 secao = Secao("viga", 35, 50, concreto.Eci, d = 45, d_linha = 5)
@@ -83,7 +83,7 @@ print("#########################################################################
 
 # Definição dos materiais para uma seção de concreto armado
 concreto = Concreto(40)
-aco = Aco(400)
+aco = Aco(400, 400)
 
 # Definição da seção transversal
 secao = Secao("viga", 20, 80, concreto.Eci, d = 75, d_linha = 5)
@@ -110,7 +110,7 @@ print("#########################################################################
 
 # Definição dos materiais para uma seção de concreto armado
 concreto = Concreto(40)
-aco = Aco(420)
+aco = Aco(420, 420)
 
 # Definição da seção transversal
 secao = Secao("viga", 35, 65, concreto.Eci, d = 60, d_linha = 5)

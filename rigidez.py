@@ -185,6 +185,9 @@ class Secao:
         self.E = E
         self.A = b*h
         self.I = b*h**3/12
+        self.yt = h/2 #distância do centro de gravidade até a fibra mais tracionada
+        self.W0 = (b*h**3/12)/(h/2) #módulo de resistência à flexão da seção bruta de concreto 
+                                    #em relação à fibra mais tracionada
 
 class No:
     """Representa as propriedades e parâmetros referente ao objeto nó."""
@@ -387,7 +390,7 @@ class Barra:
                     
                     Vsw = Vsd[i] - Vc
                     self.ASW_S[i] = (Vsw/(0.9*self.secao.d*self.aco.fywd*(math.sin(α) + math.cos(α))))*100 #Compatibilização de unidades para testes de cm²/cm para cm²/m 
-                    ASW_S_min = ((0.2*self.concreto.fct_m*self.secao.b*math.sin(α))/self.aco.fywk)*1000 #Compatibilização de unidades para testes de cm²/cm para cm²/m 
+                    ASW_S_min = ((0.2*self.concreto.fct_m*self.secao.b*math.sin(α))/self.aco.fywk)*1000 #Compatibilização de unidades para testes para cm²/m 
                     self.ASW_S[i] = max(self.ASW_S[i], ASW_S_min)
                 else:
                     raise ValueError("Vsd é maior que Vrd2, revise as dimensões da seção ou o concreto.")
@@ -405,7 +408,7 @@ class Barra:
                         Vc = Vc1
 
                     self.ASW_S[i] = ((Vsd[i] - Vc)/(0.9*self.secao.d*self.aco.fywd*math.sin(α)*((1/math.tan(θ)) + (1/math.tan(α)))))*100 #Compatibilização de unidades para testes de cm²/cm para cm²/m 
-                    ASW_S_min = ((0.2*self.concreto.fct_m*self.secao.b*math.sin(α))/self.aco.fywk)*1000 #Compatibilização de unidades para testes de cm²/cm para cm²/m 
+                    ASW_S_min = ((0.2*self.concreto.fct_m*self.secao.b*math.sin(α))/self.aco.fywk)*1000 #Compatibilização de unidades para testes para cm²/m 
                     self.ASW_S[i] = max(self.ASW_S[i], ASW_S_min)
                 else:
                     raise ValueError("Vsd é maior que Vrd2, revise as dimensões da seção ou o concreto.")
@@ -422,7 +425,7 @@ class Barra:
 
         # Majorando os esforços
         Md = abs(M*γf)
-        Nd = N*γf
+        Nd = abs(N*γf)
 
         # Calculando o xlim
         xlim = (self.concreto.εcu*self.secao.d)/(self.aco.εyd+self.concreto.εcu)
@@ -439,6 +442,11 @@ class Barra:
         # Calculando o Mdlim
         Mdlim = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*xlim*self.concreto.λ*(self.secao.d - self.concreto.λ*xlim/2.0)
 
+        Md_min = 0.8*self.secao.W0*self.concreto.fctk_sup
+        xmin = (self.secao.d - math.sqrt(self.secao.d**2-2.0*Md_min/(self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b)))/self.concreto.λ
+        Rcc = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ*xmin
+        ASL_min = Rcc/self.aco.fyd
+        
         # Para cada i e n, onde i é o índice do vetor N e n é o valor
         # correspondente ao esforço normal armazenado na posição i do vetor N.
         for i, n in enumerate(N):
@@ -446,17 +454,17 @@ class Barra:
             # Verificação do tipo de flexão: simples ou composta
             if n == 0:
                 # Flexão simples
-                print("Flexão simples")
+                
                 if Md[i] < Mdlim:
                     # Domínio 2 ou 3
-                    print("armadura simples")
+                    
                     self.x[i] = (self.secao.d - math.sqrt(self.secao.d**2-2.0*Md[i]/(self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b)))/self.concreto.λ
                     Rcc = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ*self.x[i]
                     self.ASL[i] = Rcc/self.aco.fyd
-
+                    self.ASL[i] = max(self.ASL[i], ASL_min)
                 else:
                     # armadura dupla
-                    print("armadura dupla")
+                   
                     # Limite do domínio 3
                     self.x[i] = xlim
                     Rcc = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ*self.x[i]
@@ -471,6 +479,7 @@ class Barra:
                     # Calculo da área de aço de compressão e tração
                     self.ASL2[i] = (Md[i] - Rcc*z)/(σ2*(self.secao.d-self.secao.d_linha))
                     self.ASL[i] = (Rcc + self.ASL2[i]*σ2)/self.aco.fyd
+                    self.ASL[i] = max(self.ASL[i], ASL_min)
 
             if n > 0:
                 # Flexo-tração
@@ -479,7 +488,6 @@ class Barra:
                 # Verificando regime da flexo-tração
                 if e0[i] >= (self.secao.d-self.secao.d_linha)/2.0:
                     # Flexo-tração com grande excentricidade (domínio 2 ou 3)
-                    print("Flexo-tração com grande excentricidade (domínio 2 ou 3)")
                     
                     # Calculo da excentricidade da armadura 1
                     e1 = e0[i] - (self.secao.d-self.secao.d_linha)/2.0
@@ -487,7 +495,6 @@ class Barra:
                     # Verificando o tipo de armadura
                     if Nd[i]*e1 <= Mdlim:
                         # armadura simples
-                        print("Armadura simples")
                         
                         # Resolvendo o sistema de equilíbrio para encontrar o x
                         a = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ**2/2.0
@@ -505,9 +512,9 @@ class Barra:
 
                         # Calculo da área de aço armadura 1
                         self.ASL[i] = (Nd[i] + Rcc)/self.aco.fyd
+                        self.ASL[i] = max(self.ASL[i], ASL_min)
                     else:
                         # armadura dupla
-                        print("Armadura dupla")
 
                         self.x[i] = xlim
                         Rcc = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ*self.x[i]
@@ -523,45 +530,49 @@ class Barra:
                         # Calculo da armadura 2
                         self.ASL2[i] = (Nd[i]*e1 - Mdlim)/(σ2*(self.secao.d-self.secao.d_linha))
                         self.ASL[i] = (Nd[i] + self.ASL2[i]*σ2 + Rcc)/(self.aco.fyd)
+                        self.ASL[i] = max(self.ASL[i], ASL_min)
                 else:
                     # Flexo-tração com pequena excentricidade (domínio 1)
-                    print("Flexo-tração com pequena excentricidade (domínio 1)")
+                    
                     e1 = (self.secao.d-self.secao.d_linha)/2.0 - e0[i]
                     e2 = (self.secao.d-self.secao.d_linha)/2.0 + e0[i]
                     σ1 = self.aco.fyd
                     σ2 = σ1
-                    self.ASL[i] = (Nd[i]*e2)/(σ1*(self.secao.d-self.secao.d_linha))
-                    self.ASL2[i] = (Nd[i]*e1)/(σ2*(self.secao.d-self.secao.d_linha))
 
+                    self.ASL2[i] = (Nd[i]*e1)/(σ2*(self.secao.d-self.secao.d_linha))
+                    self.ASL[i] = (Nd[i]*e2)/(σ1*(self.secao.d-self.secao.d_linha))
+                    self.ASL[i] = max(self.ASL[i], ASL_min)
+                    
             if n < 0:
                 # Flexo-compressão
-                print("Flexo-compressão")
+               
                 e0 = abs(M/N)  # calculo da excentricidade da carga
                 
                 e1 = (self.secao.d-self.secao.d_linha)/2.0 + e0[i]
                 e2 = (self.secao.d-self.secao.d_linha)/2.0 - e0[i]
                 #verificação da necessidade teórica de armadura
-                e2_0 = abs(Nd[i])/(1.7*self.concreto.fcd*self.secao.b) - self.secao.d_linha
-                e2_gp = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ*xlim*((self.concreto.λ*xlim/2.0)-self.secao.d_linha)/abs(Nd[i])
+                e2_0 = Nd[i]/(1.7*self.concreto.fcd*self.secao.b) - self.secao.d_linha
+                e2_gp = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ*xlim*((self.concreto.λ*xlim/2.0)-self.secao.d_linha)/Nd[i]
 
                 if e2_0 <= e2:
                     # Não há necessidade de armadura
-                    print("Não há necessidade teórica de armadura")
+                    # ASL_min
+                    
+                    self.ASL[i] = ASL_min
                 else:
                     # Necessidade de armadura
-                    print("Necessidade de armadura")
                        
                     if e2 < 0 or e2 < e2_gp:
                         # Flexo-compressão com grande excentricidade
-                        print("Flexo-compressão com grande excentricidade")
+                        
                         self.x[i] = xlim
                        
-                        if abs(Nd[i])*e1 <= Mdlim:
+                        if Nd[i]*e1 <= Mdlim:
                             # armadura simples
-                            print("armadura simples")
+                            
                             a = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ**2/2.0
                             b = -self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.secao.d*self.concreto.λ
-                            c = abs(Nd[i])*e1
+                            c = Nd[i]*e1
                             
                             delta = b**2-4*a*c
                             x1 = (-b+math.sqrt(delta))/(2*a)
@@ -572,27 +583,29 @@ class Barra:
                                 self.x[i] = x2
                             
                             Rcc = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ*self.x[i]
-                            self.ASL[i] = (Rcc-abs(Nd[i]))/self.aco.fyd
+                            self.ASL[i] = (Rcc-Nd[i])/self.aco.fyd
+                            self.ASL[i] = max(self.ASL[i], ASL_min)
                         else:
                             # armadura dupla
-                            print("armadura dupla")
+                            
                             self.x[i] = xlim
                             ε2 = self.concreto.εcu*(xlim-self.secao.d_linha/xlim)
                             if ε2 < self.aco.εyd:
                                 σ2 = self.aco.Es*ε2
                             else:
                                 σ2 = self.aco.fyd
-                            self.ASL2[i] = (abs(Nd[i])*e1 - Mdlim)/(σ2*(self.secao.d-self.secao.d_linha))
-                            self.ASL[i] = (self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ*xlim - abs(Nd[i]) + self.ASL2[i]*σ2)/self.aco.fyd
+                            self.ASL2[i] = (Nd[i]*e1 - Mdlim)/(σ2*(self.secao.d-self.secao.d_linha))
+                            self.ASL[i] = (self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ*xlim - Nd[i] + self.ASL2[i]*σ2)/self.aco.fyd
+                            self.ASL[i] = max(self.ASL[i], ASL_min)
                     else:
-                        e2_pc = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.secao.h*(0.5*self.secao.h-self.secao.d_linha)/abs(Nd[i])
+                        e2_pc = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.secao.h*(0.5*self.secao.h-self.secao.d_linha)/Nd[i]
                         
                         if e2 < e2_pc:
                             # Flexo-compressão com pequena excentricidade
-                            print("Flexo-compressão com pequena excentricidade")
+                            
                             a = -self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ**2/2.0
                             b = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.secao.d_linha*self.concreto.λ
-                            c = abs(Nd[i])*e2
+                            c = Nd[i]*e2
                             delta = b**2-4*a*c
                             x1 = (-b+math.sqrt(delta))/(2*a)
                             x2 = (-b-math.sqrt(delta))/(2*a)
@@ -611,10 +624,11 @@ class Barra:
                                 σ2 = self.aco.Es*ε2
                             else:
                                 σ2 = self.aco.fyd
-                            self.ASL2[i] = (abs(Nd[i]) - Rcc)/σ2
+                            self.ASL2[i] = (Nd[i] - Rcc)/σ2
+                            self.ASL[i] = ASL_min
                         else:
                             # compressão composta
-                            print("compressão composta")
+                            
                             ε1 = 2/1000
                             ε2 = ε1
                             if ε2 <= self.aco.εyd:
@@ -622,9 +636,10 @@ class Barra:
                             else:
                                 σ2 = self.aco.fyd
                             σ1 = σ2
-                            self.ASL[i] = (abs(Nd[i])*e2 - self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.secao.h*(self.secao.h*0.5-self.secao.d_linha))/(σ1*(self.secao.d-self.secao.d_linha))
-                            self.ASL2[i] = (abs(Nd[i])*e1 - self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.secao.h*(self.secao.d - self.secao.h*0.5))/(σ2*(self.secao.d-self.secao.d_linha))
-                             
+                            self.ASL2[i] = (Nd[i]*e1 - self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.secao.h*(self.secao.d - self.secao.h*0.5))/(σ2*(self.secao.d-self.secao.d_linha))
+                            self.ASL[i] = (Nd[i]*e2 - self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.secao.h*(self.secao.h*0.5-self.secao.d_linha))/(σ1*(self.secao.d-self.secao.d_linha))
+                            self.ASL[i] = max(self.ASL[i], ASL_min)
+                                                         
 class Estrutura:
     """Representa as propriedades e parâmetros referente ao objeto estrutura."""
 

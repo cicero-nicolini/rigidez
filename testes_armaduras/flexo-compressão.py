@@ -18,7 +18,7 @@ no2 = No(2,100.0,75.0)
 
 # Definição dos materiais para uma seção de concreto armado
 concreto = Concreto(25)
-aco = Aco(500)
+aco = Aco(500, 500)
 
 # Definição da seção transversal
 secao = Secao("pilar", 25, 50, concreto.Eci, d = 45, d_linha = 5)
@@ -52,7 +52,7 @@ no2 = No(2,100.0,75.0)
 
 # Definição dos materiais para uma seção de concreto armado
 concreto = Concreto(25)
-aco = Aco(500)
+aco = Aco(500, 500)
 
 # Definição da seção transversal
 secao = Secao("pilar", 25, 50, concreto.Eci, d = 45, d_linha = 5)
@@ -83,7 +83,7 @@ no2 = No(2,100.0,75.0)
 
 # Definição dos materiais para uma seção de concreto armado
 concreto = Concreto(25)
-aco = Aco(500)
+aco = Aco(500, 500)
 
 # Definição da seção transversal
 secao = Secao("pilar", 25, 50, concreto.Eci, d = 45, d_linha = 5)
@@ -114,7 +114,7 @@ no2 = No(2,100.0,75.0)
 
 # Definição dos materiais para uma seção de concreto armado
 concreto = Concreto(25)
-aco = Aco(500)
+aco = Aco(500, 500)
 
 # Definição da seção transversal
 secao = Secao("pilar", 25, 50, concreto.Eci, d = 45, d_linha = 5)
@@ -145,7 +145,7 @@ no2 = No(2,100.0,75.0)
 
 # Definição dos materiais para uma seção de concreto armado
 concreto = Concreto(25)
-aco = Aco(500)
+aco = Aco(500, 500)
 
 # Definição da seção transversal
 secao = Secao("pilar", 25, 50, concreto.Eci, d = 45, d_linha = 5)
