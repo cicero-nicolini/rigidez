@@ -38,6 +38,43 @@ class Concreto:
         self.fck = fck
         self.γc = γc
         self.αE = αE
+    
+    @property
+    def fct_m(self) -> float:
+        fct_m = (0.3*self.fck**(2/3))/10 #Compatibilização de unidades para testes de MPa para kN/cm²
+        if 50 < self.fck <= 90:
+            fct_m = (2.12*math.log(1 + 0.1*(self.fck + 8)))/10 #Compatibilização de unidades para testes de MPa para kN/cm²
+        return fct_m
+
+    @property
+    def fctk_sup(self) -> float:
+        fct_m = (0.3*self.fck**(2/3))/10 #Compatibilização de unidades para testes de MPa para kN/cm²
+        if 50 < self.fck <= 90:
+            fct_m = (2.12*math.log(1 + 0.1*(self.fck + 8)))/10 #Compatibilização de unidades para testes de MPa para kN/cm²
+        fctk_sup = 1.3*fct_m
+        return fctk_sup
+        
+    @property
+    def fctk_inf(self) -> float:
+        fct_m = (0.3*self.fck**(2/3))/10 #Compatibilização de unidades para testes de MPa para kN/cm²
+        if 50 < self.fck <= 90:
+            fct_m = (2.12*math.log(1 + 0.1*(self.fck + 8)))/10 #Compatibilização de unidades para testes de MPa para kN/cm²
+        fctk_inf = 0.7*fct_m
+        return fctk_inf
+
+    @property
+    def fctd(self) -> float:
+        fct_m = (0.3*self.fck**(2/3))/10 #Compatibilização de unidades para testes de MPa para kN/cm²
+        if 50 < self.fck <= 90:
+            fct_m = (2.12*math.log(1 + 0.1*(self.fck + 8)))/10 #Compatibilização de unidades para testes de MPa para kN/cm²
+        fctk_inf = 0.7*fct_m
+        fctd = fctk_inf/self.γc
+        return fctd
+
+    @property
+    def αv2(self) -> float:
+        αv2 = (1 - (self.fck/250))
+        return αv2 
 
     @property
     def fcd(self) -> float:
@@ -89,7 +126,7 @@ class Concreto:
 class Aco:
     """Representa as propriedades e parâmetros referente ao aço."""
 
-    def __init__(self, fyk:float, γs:float = 1.15, Es:float = 21000.0) -> None:
+    def __init__(self, fyk:float, fywk:float, γs:float = 1.15, Es:float = 21000.0) -> None:
         """
         Instancia um objeto da classe Aco
 
@@ -101,7 +138,8 @@ class Aco:
             Es: módulo de elasticidade do aço
         """
 
-        self.fyk = fyk 
+        self.fyk = fyk
+        self.fywk = fywk 
         self.γs = γs
         self.Es = Es #Unidade compatibilizada para testes de MPa para kN/cm²
     
@@ -110,6 +148,11 @@ class Aco:
         fyd = (self.fyk/self.γs)/10 #Compatibilização de unidades para testes de MPa para kN/cm²
         return fyd
 
+    @property
+    def fywd(self) -> float:
+        fywd = (self.fywk/self.γs)/10 #Compatibilização de unidades para testes de MPa para kN/cm²
+        return fywd
+    
     @property
     def εyd(self) -> float:
         fyd = (self.fyk/self.γs)/10 #Compatibilização de unidades para testes de MPa para kN/cm²
@@ -171,7 +214,7 @@ class No:
 class Barra:
     """Representa as propriedades e parâmetros referente ao objeto barra."""
 
-    def __init__(self, num:int, no1:No, no2:No, secao:Secao, concreto:Concreto = None, aco:Aco = None) -> None:
+    def __init__(self, num:int, no1:No, no2:No, secao:Secao, concreto:Concreto = None, aco:Aco = None, modelo:int = 1, α:float = 90.0, θ:float = 30.0) -> None:
         """
         Instancia um objeto da classe Barra
 
@@ -184,7 +227,22 @@ class Barra:
             secao: objeto com propriedades da seção transversal 
             concreto: objeto com propriedades do concreto
             aco: objeto com propriedades do aço
+            modelo: modelo de cálculo da armadura transversal (modelo 1 ou modelo 2)
+            α: inclinação dos estribos (α deve estar entre 45° e 90°)
+            θ: inclinação da biela comprimida de concreto (necessário para modelo 2, θ deve estar entre 30° e 45°)
+
+        Raises:
+            ValueError: Caso o modelo não corresponda aos valores indicados.
+            ValueError: Se α estiver fora do intervalo indicado.
+            ValueError: Se θ estiver fora do intervalo indicado.
         """
+
+        if modelo not in [1, 2]:
+            raise ValueError("modelo deve ser 1 ou 2")
+        if not 45 <= α <= 90:
+            raise ValueError("Erro: α deve estar entre 45° e 90°.")
+        if not 30 <= θ <= 45:
+            raise ValueError("Erro: θ deve estar entre 30° e 45°.")
 
         self.num = int(num)
         self.noi = no1
@@ -205,8 +263,12 @@ class Barra:
         self.x = np.zeros((2))
         self.ASL = np.zeros((2))
         self.ASL2 = np.zeros((2))
+        self.ASW_S = np.zeros((2))
         self.comprimento_barra()
         self.calcula_r()
+        self.modelo = modelo
+        self.α = α
+        self.θ = θ
         
     def comprimento_barra(self) -> None:
         """Calcula o comprimento da barra."""
@@ -288,19 +350,79 @@ class Barra:
                 z = z + 1
                 self.q[z] = 3*(M[j]-1)+jk
 
+    def calcula_vetor_ASW_S(self, modelo:int, α, θ, M, N, V) -> None:
+        """
+        Calcula vetor ASW_S que resulta na área de armadura transversal em cm²/m.
+        
+        Raises
+            ValueError: Se a força cortante solicitante de cálculo (Vsd) for superior
+            à resistência das bielas comprimidas de concreto (Vrd2).
+        """
+
+        α = math.radians(α)
+        θ = math.radians(θ)
+
+        # Definindo o coeficiente majorador de esforços
+        γf = 1.4
+
+        # Guardando as solicitações (M, N) dos nós extremos da barra
+        #M = np.array([self.fl[2], self.fl[5]])
+        #N = np.array([self.fl[0], self.fl[3]])
+        #V = np.array([self.fl[1], self.fl[4]])
+
+        Vsd = abs(V*γf)
+
+        for i in range(len(V)):
+
+            if modelo == 1:
+                Vrd2 = 0.27*self.concreto.αv2*self.concreto.fcd*self.secao.b*self.secao.d
+    
+                if Vsd[i] <= Vrd2:
+                    Vc0 = 0.6*self.concreto.fctd*self.secao.b*self.secao.d
+
+                    if N[i] >= 0 and self.x[i] < 0 or N[i] >= 0 and self.x[i] > self.secao.h:
+                        Vc = 0
+                    else:
+                        Vc = Vc0
+                    
+                    Vsw = Vsd[i] - Vc
+                    self.ASW_S[i] = (Vsw/(0.9*self.secao.d*self.aco.fywd*(math.sin(α) + math.cos(α))))*100 #Compatibilização de unidades para testes de cm²/cm para cm²/m 
+                    ASW_S_min = ((0.2*self.concreto.fct_m*self.secao.b*math.sin(α))/self.aco.fywk)*1000 #Compatibilização de unidades para testes de cm²/cm para cm²/m 
+                    self.ASW_S[i] = max(self.ASW_S[i], ASW_S_min)
+                else:
+                    raise ValueError("Vsd é maior que Vrd2, revise as dimensões da seção ou o concreto.")
+
+            if modelo == 2:
+                Vrd2 = 0.54*self.concreto.αv2*self.concreto.fcd*self.secao.b*self.secao.d*math.sin(θ)**2*((1/math.tan(θ)) + (1/math.tan(α)))
+
+                if Vsd[i] <= Vrd2:
+                    Vc0 = (0.42*self.concreto.fct_m*self.secao.b*self.secao.d)/self.concreto.γc
+                    Vc1 = ((Vrd2 - Vsd[i])/(Vrd2 - Vc0))*Vc0
+
+                    if N > 0 and self.x[i] > self.secao.h:
+                        Vc = 0
+                    else:
+                        Vc = Vc1
+
+                    self.ASW_S[i] = ((Vsd[i] - Vc)/(0.9*self.secao.d*self.aco.fywd*math.sin(α)*((1/math.tan(θ)) + (1/math.tan(α)))))*100 #Compatibilização de unidades para testes de cm²/cm para cm²/m 
+                    ASW_S_min = ((0.2*self.concreto.fct_m*self.secao.b*math.sin(α))/self.aco.fywk)*1000 #Compatibilização de unidades para testes de cm²/cm para cm²/m 
+                    self.ASW_S[i] = max(self.ASW_S[i], ASW_S_min)
+                else:
+                    raise ValueError("Vsd é maior que Vrd2, revise as dimensões da seção ou o concreto.")
+                
     def calcula_vetor_ASL(self, M, N) -> None:
         """Calcula vetor x, vetor ASL e ASL2 para a barra."""
 
         # Definindo o coeficiente majorador de esforços
-        γq = 1.4
+        γf = 1.4
 
         # Guardando as solicitações (M, N) dos nós extremos da barra
         #M = np.array([self.fl[2], self.fl[5]])
         #N = np.array([self.fl[0], self.fl[3]])
 
         # Majorando os esforços
-        Md = M*γq
-        Nd = N*γq
+        Md = abs(M*γf)
+        Nd = N*γf
 
         # Calculando o xlim
         xlim = (self.concreto.εcu*self.secao.d)/(self.aco.εyd+self.concreto.εcu)
@@ -320,11 +442,7 @@ class Barra:
         # Para cada i e n, onde i é o índice do vetor N e n é o valor
         # correspondente ao esforço normal armazenado na posição i do vetor N.
         for i, n in enumerate(N):
-            # Resultante de compressão do concreto
-            #Rcc = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ*self.x[i]
-            # Braço de alavanca
-            #z = self.secao.d - (self.concreto.λ*self.x[i]/2.0)
-
+            
             # Verificação do tipo de flexão: simples ou composta
             if n == 0:
                 # Flexão simples
@@ -751,7 +869,7 @@ class Carregamento_pontual:
 class Modelo:
     """Representa as propriedades e parâmetros referente ao objeto modelo."""
 
-    def __init__(self, bw:float, h:float, l:float, lf:float, a:float, b:float, c:float, ap1:float, ap2:float, w:float, fck:float, fyk:float, αE:float = 1.0, d:float = None, d_linha:float = None) -> None:
+    def __init__(self, bw:float, h:float, l:float, lf:float, a:float, b:float, c:float, ap1:float, ap2:float, w:float, fck:float, fyk:float, fywk:float, modelo:int, α:float = 90.0, θ:float = 30.0, αE:float = 1.0, d:float = None, d_linha:float = None) -> None:
         """
         Instancia um objeto da classe Modelo
 
@@ -772,7 +890,11 @@ class Modelo:
             w: modulo carregamento distribuido
             fck: resistência característica do concreto [MPa]
             fyk: resistência característica do aço [MPa]
+            fywk: resistência característica do aço para armadura transversal [MPa]
             αE: coeficiente de ajuste do módulo de elasticidade
+            modelo: modelo de cálculo da armadura transversal (modelo 1 ou modelo 2)
+            α: inclinação dos estribos (α deve estar entre 45° e 90°)
+            θ: inclinação da biela comprimida de concreto (necessário para modelo 2, θ deve estar entre 30° e 45°)
         """
 
         self.bw = bw
@@ -789,7 +911,11 @@ class Modelo:
         self.w = w
         self.fck = fck
         self.fyk = fyk
+        self.fywk = fywk
         self.αE = αE
+        self.modelo = modelo
+        self.α = α
+        self.θ = θ
         self.nos = None
         self.barras = None
 
@@ -818,7 +944,7 @@ class Modelo:
 
         # Definição dos materiais para uma seção de concreto armado
         concreto = Concreto(self.fck, self.αE)
-        aco = Aco(self.fyk)
+        aco = Aco(self.fyk, self.fywk)
 
         # Definição da seção transversal
 

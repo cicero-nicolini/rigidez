@@ -1,8 +1,10 @@
-from pathlib import Path
 import sys
+from pathlib import Path
 
-RAIZ_PROJETO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(RAIZ_PROJETO))
+sys.path.insert(
+    0,
+    str(Path(__file__).resolve().parents[2])
+)
 
 from rigidez import *
 
@@ -18,7 +20,7 @@ no2 = No(2,100.0,75.0)
 
 # Definição dos materiais para uma seção de concreto armado
 concreto = Concreto(70)
-aco = Aco(500)
+aco = Aco(500, 500)
 
 # Definição da seção transversal
 secao = Secao("viga", 20, 40, concreto.Eci, d = 35, d_linha = 5)
