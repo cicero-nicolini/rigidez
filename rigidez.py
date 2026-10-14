@@ -413,15 +413,15 @@ class Barra:
                 else:
                     raise ValueError("Vsd é maior que Vrd2, revise as dimensões da seção ou o concreto.")
                 
-    def calcula_vetor_ASL(self, M, N) -> None:
+    def calcula_vetor_ASL(self) -> None:
         """Calcula vetor x, vetor ASL e ASL2 para a barra."""
 
         # Definindo o coeficiente majorador de esforços
         γf = 1.4
 
         # Guardando as solicitações (M, N) dos nós extremos da barra
-        #M = np.array([self.fl[2], self.fl[5]])
-        #N = np.array([self.fl[0], self.fl[3]])
+        M = np.array([self.fl[2], self.fl[5]])
+        N = np.array([self.fl[0], self.fl[3]])
 
         # Majorando os esforços
         Md = abs(M*γf)
@@ -743,7 +743,9 @@ class Estrutura:
 
             #Transforma o vetor f para o sistema local para as barras = solicitacoes
                  
-            barra.fl = barra.r @ barra.f    
+            barra.fl = barra.r @ barra.f 
+
+            barra.calcula_vetor_ASL()
 
     def calcula_reacoes(self) -> None:
         """Calcula um vetor com as reações da estrutura."""      
@@ -963,10 +965,10 @@ class Modelo:
 
         # Definição da seção transversal
 
-        secao1 = Secao("retangular", self.bw, self.h, concreto.Eci)
-        secao2 = Secao("retangular", self.bw, self.c, concreto.Eci)
-        secao3 = Secao("retangular", self.bw, self.h-self.a-self.c, concreto.Eci)
-        secao4 = Secao("retangular", self.bw, self.h, concreto.Eci)
+        secao1 = Secao("retangular", self.bw, self.h, concreto.Eci, self.h - 3.5, 3.5)
+        secao2 = Secao("retangular", self.bw, self.c, concreto.Eci, self.c - 3.5, 3.5)
+        secao3 = Secao("retangular", self.bw, self.h-self.a-self.c, concreto.Eci, self.h-self.a-self.c - 3.5, 3.5)
+        secao4 = Secao("retangular", self.bw, self.h, concreto.Eci, self.h - 3.5, 3.5)
 
         secao4.I = secao4.I * 1000
         secao4.A = secao4.A * 1000
@@ -1049,6 +1051,10 @@ class Modelo:
         portico.calcula_reacoes()
         print("reacoes")
         print_vetor(portico.R)
+
+        for barra in portico.barras:
+            print("Asl barra" + str(barra.num))
+            print_vetor(barra.ASL)
 
 def print_matriz(m) -> None:
     l, c = m.shape
