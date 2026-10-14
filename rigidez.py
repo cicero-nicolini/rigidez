@@ -954,10 +954,10 @@ class Modelo:
         
         no1.Tx = True
         no1.Ty = True
-        no1.Rz = True
+        no1.Rz = False
         no10.Tx = True
         no10.Ty = True
-        no10.Rz = True
+        no10.Rz = False
 
         # Definição dos materiais para uma seção de concreto armado
         concreto = Concreto(self.fck, self.αE)
