@@ -1,0 +1,36 @@
+from pathlib import Path
+import sys
+
+RAIZ_PROJETO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(RAIZ_PROJETO))
+
+from rigidez import *
+
+print("#########################################################################################################")
+print("Modelo Schwingel Banzo Inferior")
+print("#########################################################################################################")
+
+# Definição dos nós
+no1 = No(1,0.0,75.0)
+no2 = No(2,100.0,75.0)
+
+# Definição dos materiais para uma seção de concreto armado
+concreto = Concreto(35)
+aco = Aco(500, 500)
+
+# Definição da seção transversal
+secao = Secao("banzo inferior", 30, 30, concreto.Eci, d = 26.5, d_linha = 3.5)
+
+# Definição da barra para obtencao de resultados
+banzo = Barra(1, no1, no2, secao, concreto, aco)
+
+# Esforços para teste
+M = np.array([6611])
+N = np.array([735.36])
+
+# Passando esforços para metodo do objeto barra que calcula armadura e armazena no vetor ASL e ASL2
+banzo.calcula_vetor_ASL(M, N)
+
+# Visualização de resultados das areas de armaduras do objeto barra
+print(banzo.ASL2)
+print(banzo.ASL)

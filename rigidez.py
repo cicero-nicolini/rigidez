@@ -481,7 +481,8 @@ class Barra:
                     self.ASL[i] = (Rcc + self.ASL2[i]*σ2)/self.aco.fyd
                     self.ASL[i] = max(self.ASL[i], ASL_min)
 
-            if n > 0:
+            if N[0] < 0 and N[1] > 0:
+            #if n > 0:
                 # Flexo-tração
                 e0 = M/N  # calculo da excentricidade da carga
                 
@@ -542,8 +543,9 @@ class Barra:
                     self.ASL2[i] = (Nd[i]*e1)/(σ2*(self.secao.d-self.secao.d_linha))
                     self.ASL[i] = (Nd[i]*e2)/(σ1*(self.secao.d-self.secao.d_linha))
                     self.ASL[i] = max(self.ASL[i], ASL_min)
-                    
-            if n < 0:
+
+            if N[0] > 0 and N[1] < 0:
+            #if n < 0:
                 # Flexo-compressão
                
                 e0 = abs(M/N)  # calculo da excentricidade da carga
@@ -965,10 +967,22 @@ class Modelo:
 
         # Definição da seção transversal
 
-        secao1 = Secao("retangular", self.bw, self.h, concreto.Eci, self.h - 3.5, 3.5)
-        secao2 = Secao("retangular", self.bw, self.c, concreto.Eci, self.c - 3.5, 3.5)
-        secao3 = Secao("retangular", self.bw, self.h-self.a-self.c, concreto.Eci, self.h-self.a-self.c - 3.5, 3.5)
-        secao4 = Secao("retangular", self.bw, self.h, concreto.Eci, self.h - 3.5, 3.5)
+        d1 = self.h - 3.5
+        d1_linha = 3.5
+
+        d2 = self.c - 3.5
+        d2_linha = 3.5
+
+        d3 = self.h-self.a-self.c - 3.5
+        d3_linha = 3.5
+
+        d4 = self.h - 3.5
+        d4_linha = 3.5
+
+        secao1 = Secao("retangular", self.bw, self.h, concreto.Eci, d1, d1_linha)
+        secao2 = Secao("retangular", self.bw, self.c, concreto.Eci, d2, d2_linha)
+        secao3 = Secao("retangular", self.bw, self.h-self.a-self.c, concreto.Eci, d3, d3_linha)
+        secao4 = Secao("retangular", self.bw, self.h, concreto.Eci, d4, d4_linha)
 
         secao4.I = secao4.I * 1000
         secao4.A = secao4.A * 1000
@@ -989,10 +1003,12 @@ class Modelo:
         self.barras = [barra1, barra2, barra3, barra4, barra5, barra6, barra7, barra8, barra9, barra10]
 
         #Definição dos carregamentos nas barras
-        
-        carregamento1 = Carregamento_distribuido(0.0,self.lf-(self.b/2)-(self.bw/2),self.w,self.w,barra2)
-        carregamento2 = Carregamento_distribuido(0.0,self.b+self.bw,self.w,self.w,barra4)
-        carregamento3 = Carregamento_distribuido(0.0,self.l-self.lf-(self.b/2)-(self.bw/2),self.w,self.w,barra5)
+
+        carregamento1 = Carregamento_distribuido(0.0,ap1/2,self.w,self.w,barra1)
+        carregamento2 = Carregamento_distribuido(0.0,self.lf-(self.b/2)-(self.bw/2),self.w,self.w,barra2)
+        carregamento3 = Carregamento_distribuido(0.0,self.b+self.bw,self.w,self.w,barra4)
+        carregamento4 = Carregamento_distribuido(0.0,self.l-self.lf-(self.b/2)-(self.bw/2),self.w,self.w,barra5)
+        carregamento5 = Carregamento_distribuido(0.0,ap2/2,self.w,self.w,barra6)
         
         #Calcula as forças de engastamento perfeito
     
@@ -1002,6 +1018,10 @@ class Modelo:
         carregamento2.calcula_fep()
         carregamento3.calcula_fepl()
         carregamento3.calcula_fep()
+        carregamento4.calcula_fepl()
+        carregamento4.calcula_fep()
+        carregamento5.calcula_fepl()
+        carregamento5.calcula_fep()
         
         #Define a estrutura, calcula os resultados de deslocamentos, solicitações internas e reações
     
@@ -1051,10 +1071,23 @@ class Modelo:
         portico.calcula_reacoes()
         print("reacoes")
         print_vetor(portico.R)
-
+        
         for barra in portico.barras:
+            
             print("Asl barra" + str(barra.num))
             print_vetor(barra.ASL)
+
+        for barra in self.barras:
+                    
+            print("comprimento barra" + str(barra.num))
+            print(barra.L) 
+
+        for no in self.nos:
+            
+            print("no" + str(no.num))
+            print(no.x)
+            print(no.y)
+        
 
 def print_matriz(m) -> None:
     l, c = m.shape
