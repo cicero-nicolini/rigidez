@@ -28,3 +28,5 @@ modelo = Modelo(bw = 30.0,
                 α = 90,
                 θ = 30,
                 αE = 1)
+
+modelo.desenha_area_armaduras()

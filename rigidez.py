@@ -1,7 +1,7 @@
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 import numpy as np
 import math
-#from matplotlib.collections import LineCollection
+from matplotlib.collections import LineCollection
 
 class Concreto:
     """Representa as propriedades e parâmetros referente ao concreto."""
@@ -937,6 +937,12 @@ class Modelo:
         self.θ = θ
         self.nos = None
         self.barras = None
+        self.cord_x = [] 
+        self.cord_y = []
+        self.linhas = []
+        self.x_asl = []
+        self.y_asl = [] 
+        self.linhas_asl = []
 
         #Definição dos nós
         
@@ -1009,7 +1015,7 @@ class Modelo:
         carregamento3 = Carregamento_distribuido(0.0,self.b+self.bw,self.w,self.w,barra4)
         carregamento4 = Carregamento_distribuido(0.0,self.l-self.lf-(self.b/2)-(self.bw/2),self.w,self.w,barra5)
         carregamento5 = Carregamento_distribuido(0.0,ap2/2,self.w,self.w,barra6)
-        
+
         #Calcula as forças de engastamento perfeito
     
         carregamento1.calcula_fepl()
@@ -1087,8 +1093,85 @@ class Modelo:
             print("no" + str(no.num))
             print(no.x)
             print(no.y)
-        
 
+    def desenha_area_armaduras(self) -> None:
+        """Desenha gráfico com resultados de áreas de armaduras por nó da estrutura."""
+        
+        for no in self.nos:
+            self.cord_y.append(no.y)  
+            self.cord_x.append(no.x)
+
+        for barra in self.barras:
+
+            no_inicial = (barra.noi.x, barra.noi.y)    
+            no_final = (barra.noj.x, barra.noj.y)
+
+            self.linhas.append([no_inicial, no_final])
+
+        #lista com barras onde serão mostrados os resultados para área de armaduras
+        barras_asl = [self.barras[1], self.barras[2], self.barras[3], self.barras[4]]
+              
+        #nó 1 estrutura - barra 1
+        self.x_asl.append(self.barras[0].noi.x)
+        self.y_asl.append(self.barras[0].noi.y - self.barras[0].ASL[0])
+
+        #nó 10 - barra 6
+        self.x_asl.append(self.barras[5].noj.x)
+        self.y_asl.append(self.barras[5].noj.y - self.barras[5].ASL[1])
+
+        #linha do diagrama que liga valores asl referentes ao nó 1 e nó 2 da estrutura
+        no1_asl = (self.barras[0].noi.x, self.barras[0].noi.y - self.barras[0].ASL[0])    
+        no2_asl = (self.barras[0].noj.x, self.barras[0].noj.y - self.barras[0].ASL[1])
+        self.linhas_asl.append([no1_asl, no2_asl])
+
+        #linha do diagrama que liga valores asl referentes ao nó 9 e nó 10 da estrutura
+        no9_asl = (self.barras[5].noi.x, self.barras[5].noi.y - self.barras[5].ASL[0])    
+        no10_asl = (self.barras[5].noj.x, self.barras[5].noj.y - self.barras[5].ASL[1])
+        self.linhas_asl.append([no9_asl, no10_asl])
+
+        #pontos para formar a primeira linha vertical que delimita diagrama
+        ponto1_origem_diagrama = (self.barras[0].noi.x, self.barras[0].noi.y)    
+        ponto2_origem_diagrama = (self.barras[0].noi.x, self.barras[0].noi.y - self.barras[0].ASL[0])
+        self.linhas_asl.append([ponto1_origem_diagrama, ponto2_origem_diagrama])
+
+        #pontos para formar a ultima linha vertical que delimita diagrama
+        ponto1_fim_diagrama = (self.barras[5].noj.x, self.barras[5].noj.y)    
+        ponto2_fim_diagrama = (self.barras[5].noj.x, self.barras[5].noj.y - self.barras[5].ASL[1])
+        self.linhas_asl.append([ponto1_fim_diagrama, ponto2_fim_diagrama])
+        
+        for barra in barras_asl:
+
+            self.x_asl.append(barra.noi.x)
+            self.y_asl.append(barra.noi.y - barra.ASL[0])
+           
+            self.x_asl.append(barra.noj.x)
+            self.y_asl.append(barra.noj.y - barra.ASL[1])
+
+            no1_linha_asl = (barra.noi.x, barra.noi.y - barra.ASL[0])    
+            no2_linha_asl = (barra.noj.x, barra.noj.y - barra.ASL[1])
+            self.linhas_asl.append([no1_linha_asl, no2_linha_asl])
+
+            #pontos para formar linha vertical que delimita diagrama para cada barra
+            
+            ponto1_barra_origem_diagrama = (barra.noi.x, barra.noi.y) 
+            ponto2_barra_origem_diagrama = (barra.noi.x, barra.noi.y - barra.ASL[0])
+            self.linhas_asl.append([ponto1_barra_origem_diagrama, ponto2_barra_origem_diagrama])
+
+            ponto1_barra_fim_diagrama = (barra.noj.x, barra.noj.y) 
+            ponto2_barra_fim_diagrama = (barra.noj.x, barra.noj.y - barra.ASL[1])
+            self.linhas_asl.append([ponto1_barra_fim_diagrama, ponto2_barra_fim_diagrama])
+            
+        lc = LineCollection(self.linhas, colors='dimgray', linewidths=1.5)
+        lc2 = LineCollection(self.linhas_asl, colors='royalblue', linewidths=1)
+        fig, ax = plt.subplots()
+        ax2 = ax.twinx()
+        ax.add_collection(lc)
+        ax.add_collection(lc2)
+        ax.plot(self.cord_x, self.cord_y, 'ko', markersize=3)
+        ax.plot(self.x_asl, self.y_asl, 'ro', markersize=3)
+        ax.set_aspect(5)
+        plt.show()  
+        
 def print_matriz(m) -> None:
     l, c = m.shape
 
