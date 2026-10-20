@@ -1,13 +1,13 @@
-from no import No
-from concreto import Concreto
-from aco import Aco
-from secao import Secao
-from barra import Barra
-from carregamento_distribuido import Carregamento_distribuido
-from estrutura import Estrutura
+from .no import No
+from .concreto import Concreto
+from .aco import Aco
+from .secao import Secao
+from .barra import Barra
+from .carregamento_distribuido import Carregamento_distribuido
+from .estrutura import Estrutura
 from matplotlib.collections import LineCollection
 import matplotlib.pyplot as plt
-from visualizacao import print_vetor, print_matriz
+from .visualizacao import print_vetor, print_matriz
 
 class Modelo:
     """Representa as propriedades e parâmetros referente ao objeto modelo."""
@@ -198,6 +198,8 @@ class Modelo:
         portico.calcula_reacoes()
         print("reacoes")
         print_vetor(portico.R)
+
+        portico.calcula_ASL_barra()
         
         for barra in portico.barras:
             
@@ -282,13 +284,13 @@ class Modelo:
             ponto2_barra_fim_diagrama = (barra.noj.x, barra.noj.y - barra.ASL[1])
             self.linhas_asl.append([ponto1_barra_fim_diagrama, ponto2_barra_fim_diagrama])
             
-            lc = LineCollection(self.linhas, colors='dimgray', linewidths=1.5)
-            lc2 = LineCollection(self.linhas_asl, colors='royalblue', linewidths=1)
-            fig, ax = plt.subplots()
-            ax2 = ax.twinx()
-            ax.add_collection(lc)
-            ax.add_collection(lc2)
-            ax.plot(self.cord_x, self.cord_y, 'ko', markersize=3)
-            ax.plot(self.x_asl, self.y_asl, 'ro', markersize=3)
-            ax.set_aspect(5)
-            plt.show()  
+        lc = LineCollection(self.linhas, colors='dimgray', linewidths=1.5)
+        lc2 = LineCollection(self.linhas_asl, colors='royalblue', linewidths=1)
+        fig, ax = plt.subplots()
+        ax2 = ax.twinx()
+        ax.add_collection(lc)
+        ax.add_collection(lc2)
+        ax.plot(self.cord_x, self.cord_y, 'ko', markersize=3)
+        ax.plot(self.x_asl, self.y_asl, 'ro', markersize=3)
+        ax.set_aspect(5)
+        plt.show()  

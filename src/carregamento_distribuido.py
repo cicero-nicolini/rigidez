@@ -1,4 +1,4 @@
-from barra import Barra
+from .barra import Barra
 import numpy as np
 
 class Carregamento_distribuido:

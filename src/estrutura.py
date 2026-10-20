@@ -106,6 +106,10 @@ class Estrutura:
                  
             barra.fl = barra.r @ barra.f 
 
+    def calcula_ASL_barra(self) -> None:
+        """Calcula as armaduras considerando as solicitações nos extremos da barra."""
+
+        for barra in self.barras:
             if barra.num == 7 or barra.num == 8 or barra.num == 9 or barra.num == 10:
                 pass
             else:

@@ -1,47 +1,52 @@
-from pathlib import Path
-import sys
+"""
+EXEMPLO 1 - Exemplo referente a planilha da disciplina de Análise Matricial do prof. Quevedo
 
-RAIZ_PROJETO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(RAIZ_PROJETO))
+Objetivo: determinar deslocamentos, solicitações e reações de um pórtico
 
-from rigidez import *
+"""
+
+from src.no import No
+from src.barra import Barra
+from src.secao import Secao
+from src.carregamento_distribuido import Carregamento_distribuido
+from src.carregamento_pontual import Carregamento_pontual
+from src.estrutura import Estrutura
+from src.visualizacao import print_matriz, print_vetor
 
 print("#########################################################################################################")
-print("Teste Exemplo 12")
+print("Exemplo 1")
 print("#########################################################################################################")
-
 
 # Definição dos nós
-no1 = No(1,0.0,0.0)
-no2 = No(2,0.0,4.0)
-no3 = No(3,6.0,4.0)
-no4 = No(4,6.0,1.0)
-nos = [no1, no2, no3, no4]
+no1 = No(1,0.0,75.0)
+no2 = No(2,100.0,75.0)
+no3 = No(3,200.0,0.0)
+nos = [no1, no2, no3]
 
 # Aplicação das cargas nodais
-no3.Fx = 40
+no2.Fy = -10.0
+no2.Mz = -1000.0
 
 # Aplicação das restrições nodais
 no1.Tx = True
 no1.Ty = True
-no4.Ty = True
+no1.Rz = True
+no3.Tx = True
+no3.Ty = True
+no3.Rz = True
 
 # Definição da seção transversal
 
-secao = Secao("retangular", 0.0262, 0.5114, 2.5e7)
-
-print("secao.A", secao.E)
-print("secao.A", secao.A)
-print("secao.I", secao.I)
+secao = Secao("retangular", 0.29, 34.64, 10000.0)
 
 # Definição das barras e propriedades
 barra1 = Barra(1.0,no1,no2,secao)
 barra2 = Barra(2.0,no2,no3,secao)
-barra3 = Barra(3.0,no4,no3,secao)
-barras = [barra1, barra2, barra3]
+barras = [barra1, barra2]
 
 # Definição dos carregamentos nas barras
-carregamento1 = Carregamento_distribuido(0,4.0,10.0,10.0,barra1)
+carregamento1 = Carregamento_distribuido(0,100,0.24,0.24,barra1)
+carregamento2 = Carregamento_pontual(62.5,12.0,16.0,barra2)
 
 # Definição da estrutura
 portico = Estrutura(nos,barras)
@@ -59,14 +64,14 @@ print_matriz(portico.k01)
 # Calcula as forças de engastamento perfeito
 carregamento1.calcula_fepl()
 carregamento1.calcula_fep()
+carregamento2.calcula_fepl()
+carregamento2.calcula_fep()
 
 # Verificação Fep
 print("fep barra1")
 print_vetor(barra1.fep)
 print("fep barra2")
 print_vetor(barra2.fep)
-print("fep barra3")
-print_vetor(barra3.fep)
 
 # Monta vetor de cargas nodais global
 portico.monta_fnos()
@@ -74,14 +79,21 @@ print("fnos")
 print_vetor(portico.fnos)
 
 # Aplica condições de contorno no vetor de cargas nodais global
-print("f01")
 portico.aplica_cc_fnos()
+print("f01")
 print_vetor(portico.fnos)
 
 # Calcula vetor de deslocamento da estrutura
-print("deslocamentos")
 portico.calcula_deslocamentos()
+print("deslocamentos")
 print_vetor(portico.u)
+portico.calcula_solicitacoes_internas_nodais()
+
+# Verificação vetor f
+print("f barra1")
+print_vetor(barra1.f)
+print("f barra2")
+print_vetor(barra2.f)
 
 # Calcula solicitacoes internas nas barras
 portico.calcula_solicitacoes_internas_nodais()
@@ -89,10 +101,8 @@ print("solicitacoes barra1")
 print_vetor(barra1.fl)
 print("solicitacoes barra2")
 print_vetor(barra2.fl)
-print("solicitacoes barra3")
-print_vetor(barra3.fl)
 
 # Calcula vetor de reações da estrutura
-print("reacoes")
 portico.calcula_reacoes()
+print("reacoes")
 print_vetor(portico.R)

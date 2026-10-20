@@ -1,10 +1,13 @@
-from pathlib import Path
-import sys
+"""
+EXEMPLO_SCH - Exemplo referente ao material do professor Schwingel
 
-RAIZ_PROJETO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(RAIZ_PROJETO))
+Objetivo: determinar deslocamentos, solicitações, reações e armaduras
 
-from rigidez import *
+"""
+from src.modelo import Modelo
+
+#RAIZ_PROJETO = Path(__file__).resolve().parent.parent
+#sys.path.insert(0, str(RAIZ_PROJETO))
 
 print("#########################################################################################################")
 print("Teste Modelo")

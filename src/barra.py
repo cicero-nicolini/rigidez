@@ -1,10 +1,10 @@
 
 import numpy as np
 import math
-from secao import Secao
-from no import No
-from concreto import Concreto
-from aco import Aco
+from .secao import Secao
+from .no import No
+from .concreto import Concreto
+from .aco import Aco
 
 class Barra:
     """Representa as propriedades e parâmetros referente ao objeto barra."""
