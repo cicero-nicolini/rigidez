@@ -96,6 +96,12 @@ class Concreto:
         return Eci
 
     @property
+    def Ecs(self) -> float:
+        alphai = 0.8+0.2*self.fck/80.0
+        Ecs = alphai*self.Eci
+        return Ecs
+
+    @property
     def αc(self) -> float:
         αc = 0.85
         if 50 < self.fck <= 90:
@@ -747,7 +753,10 @@ class Estrutura:
                  
             barra.fl = barra.r @ barra.f 
 
-            barra.calcula_vetor_ASL()
+            if barra.num == 7 or barra.num == 8 or barra.num == 9 or barra.num == 10:
+                pass
+            else:
+                barra.calcula_vetor_ASL()
 
     def calcula_reacoes(self) -> None:
         """Calcula um vetor com as reações da estrutura."""      
@@ -960,7 +969,7 @@ class Modelo:
 
         #Aplicação das restrições nodais
         
-        no1.Tx = True
+        no1.Tx = False
         no1.Ty = True
         no1.Rz = False
         no10.Tx = True
@@ -985,13 +994,10 @@ class Modelo:
         d4 = self.h - 3.5
         d4_linha = 3.5
 
-        secao1 = Secao("retangular", self.bw, self.h, concreto.Eci, d1, d1_linha)
-        secao2 = Secao("retangular", self.bw, self.c, concreto.Eci, d2, d2_linha)
-        secao3 = Secao("retangular", self.bw, self.h-self.a-self.c, concreto.Eci, d3, d3_linha)
-        secao4 = Secao("retangular", self.bw, self.h, concreto.Eci, d4, d4_linha)
-
-        secao4.I = secao4.I * 1000
-        secao4.A = secao4.A * 1000
+        secao1 = Secao("retangular", self.bw, self.h, concreto.Ecs, d1, d1_linha)
+        secao2 = Secao("retangular", self.bw, self.c, concreto.Ecs, d2, d2_linha)
+        secao3 = Secao("retangular", self.bw, self.h-self.a-self.c, concreto.Ecs, d3, d3_linha)
+        secao4 = Secao("retangular", 100.0, 100.0, 100.0*concreto.Ecs, 0.0, 0.0)
 
         #Definição das barras e propriedades
         #Ordem dos nós na definição das barras deve ser sempre da esquerda para direita ou de baixo para cima
