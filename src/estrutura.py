@@ -114,6 +114,7 @@ class Estrutura:
                 pass
             else:
                 barra.calcula_vetor_ASL()
+                barra.calcula_vetor_ASW_S()
 
     def calcula_reacoes(self) -> None:
         """Calcula um vetor com as reações da estrutura."""      

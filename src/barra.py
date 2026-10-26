@@ -145,7 +145,7 @@ class Barra:
                 z = z + 1
                 self.q[z] = 3*(M[j]-1)+jk
 
-    def calcula_vetor_ASW_S(self, modelo:int, α, θ, M, N, V) -> None:
+    def calcula_vetor_ASW_S(self) -> None:
         """
         Calcula vetor ASW_S que resulta na área de armadura transversal em cm²/m.
         
@@ -154,22 +154,22 @@ class Barra:
             à resistência das bielas comprimidas de concreto (Vrd2).
         """
 
-        α = math.radians(α)
-        θ = math.radians(θ)
+        α = math.radians(self.α)
+        θ = math.radians(self.θ)
 
         # Definindo o coeficiente majorador de esforços
         γf = 1.4
 
         # Guardando as solicitações (M, N) dos nós extremos da barra
-        #M = np.array([self.fl[2], self.fl[5]])
-        #N = np.array([self.fl[0], self.fl[3]])
-        #V = np.array([self.fl[1], self.fl[4]])
+        M = np.array([self.fl[2], self.fl[5]])
+        N = np.array([self.fl[0], self.fl[3]])
+        V = np.array([self.fl[1], self.fl[4]])
 
         Vsd = abs(V*γf)
 
         for i in range(len(V)):
 
-            if modelo == 1:
+            if self.modelo == 1:
                 Vrd2 = 0.27*self.concreto.αv2*self.concreto.fcd*self.secao.b*self.secao.d
     
                 if Vsd[i] <= Vrd2:
@@ -187,7 +187,7 @@ class Barra:
                 else:
                     raise ValueError("Vsd é maior que Vrd2, revise as dimensões da seção ou o concreto.")
 
-            if modelo == 2:
+            if self.modelo == 2:
                 Vrd2 = 0.54*self.concreto.αv2*self.concreto.fcd*self.secao.b*self.secao.d*math.sin(θ)**2*((1/math.tan(θ)) + (1/math.tan(α)))
 
                 if Vsd[i] <= Vrd2:
