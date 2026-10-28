@@ -223,6 +223,9 @@ class Modelo:
         carregamento26 = Carregamento_distribuido(0.0,((self.l-self.lf-(self.b/2)-(self.bw/2))/8.0),self.w,self.w,barra38)
         carregamento5 = Carregamento_distribuido(0.0,ap2/2,self.w,self.w,barra6)
 
+        # Referências para visualização, sem alterar os cálculos.
+        self.carregamentos = [carregamento1, carregamento2, carregamento3, carregamento4, carregamento5, carregamento6, carregamento7, carregamento8, carregamento9, carregamento10, carregamento11, carregamento12, carregamento13, carregamento14, carregamento15, carregamento16, carregamento17, carregamento18, carregamento19, carregamento20, carregamento21, carregamento22, carregamento23, carregamento24, carregamento25, carregamento26]
+
         #Calcula as forças de engastamento perfeito
     
         carregamento1.calcula_fepl()
@@ -281,6 +284,8 @@ class Modelo:
         #Define a estrutura, calcula os resultados de deslocamentos, solicitações internas e reações
     
         portico = Estrutura(self.nos,self.barras)
+        self.portico = portico
+        
         portico.monta_k()
         print("k")
         print_matriz(portico.k)
