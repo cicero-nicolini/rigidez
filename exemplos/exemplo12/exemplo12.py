@@ -1,10 +1,14 @@
-from pathlib import Path
-import sys
+"""
+EXEMPLO_SCH - Exemplo referente ao material do professor Schwingel
 
-RAIZ_PROJETO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(RAIZ_PROJETO))
+Objetivo: determinar armaduras
 
-from rigidez import *
+"""
+from src.no import No
+from src.concreto import Concreto
+from src.aco import Aco
+from src.secao import Secao
+from src.barra import Barra
 
 print("#########################################################################################################")
 print("Modelo Schwingel Banzo Inferior")
@@ -25,12 +29,19 @@ secao = Secao("banzo inferior", 30, 30, concreto.Eci, d = 26.5, d_linha = 3.5)
 banzo = Barra(1, no1, no2, secao, concreto, aco)
 
 # Esforços para teste
-M = np.array([6611])
-N = np.array([735.36])
+banzo.fl[2] = 6611.0
+banzo.fl[5] = 6611.0
+
+banzo.fl[0] = -735.36
+banzo.fl[3] = 735.36
 
 # Passando esforços para metodo do objeto barra que calcula armadura e armazena no vetor ASL e ASL2
-banzo.calcula_vetor_ASL(M, N)
+banzo.calcula_vetor_ASL()
 
 # Visualização de resultados das areas de armaduras do objeto barra
 print(banzo.ASL2)
 print(banzo.ASL)
+
+
+
+

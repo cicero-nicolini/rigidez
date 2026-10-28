@@ -276,7 +276,7 @@ class Barra:
             if N[0] < 0 and N[1] > 0:
             #if n > 0:
                 # Flexo-tração
-                e0 = M/N  # calculo da excentricidade da carga
+                e0 = abs(M/N) # calculo da excentricidade da carga
                 
                 # Verificando regime da flexo-tração
                 if e0[i] >= (self.secao.d-self.secao.d_linha)/2.0:

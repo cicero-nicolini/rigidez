@@ -1,10 +1,14 @@
-from pathlib import Path
-import sys
+"""
+EXEMPLO 10 - Exemplos do professor Américo para cálculo de armaduras por flexo-compressão
 
-RAIZ_PROJETO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(RAIZ_PROJETO))
+Objetivo: determinar armaduras
 
-from rigidez import *
+"""
+from src.no import No
+from src.concreto import Concreto
+from src.aco import Aco
+from src.secao import Secao
+from src.barra import Barra
 
 print("#########################################################################################################")
 print("Exemplo 1")
@@ -27,11 +31,14 @@ secao = Secao("pilar", 25, 50, concreto.Eci, d = 45, d_linha = 5)
 pilar = Barra(1, no1, no2, secao, concreto, aco)
 
 # Esforços para teste
-M = np.array([7000.0])
-N = np.array([-100.0])
+pilar.fl[2] = 7000.0
+pilar.fl[5] = 7000.0
+
+pilar.fl[0] = 100.0
+pilar.fl[3] = -100.0
 
 # Passando esforços para metodo do objeto barra que calcula armadura e armazena no vetor ASL e ASL2
-pilar.calcula_vetor_ASL(M, N)
+pilar.calcula_vetor_ASL()
 
 # Visualização de resultados das areas de armaduras do objeto barra
 print(pilar.ASL2)
@@ -61,11 +68,14 @@ secao = Secao("pilar", 25, 50, concreto.Eci, d = 45, d_linha = 5)
 pilar = Barra(1, no1, no2, secao, concreto, aco)
 
 # Esforços para teste
-M = np.array([15000.0])
-N = np.array([-800.0])
+pilar.fl[2] = 15000.0
+pilar.fl[5] = 15000.0
+
+pilar.fl[0] = 800.0
+pilar.fl[3] = -800.0
 
 # Passando esforços para metodo do objeto barra que calcula armadura e armazena no vetor ASL e ASL2
-pilar.calcula_vetor_ASL(M, N)
+pilar.calcula_vetor_ASL()
 
 # Visualização de resultados das areas de armaduras do objeto barra
 print(pilar.ASL2)
@@ -92,11 +102,14 @@ secao = Secao("pilar", 25, 50, concreto.Eci, d = 45, d_linha = 5)
 pilar = Barra(1, no1, no2, secao, concreto, aco)
 
 # Esforços para teste
-M = np.array([3000.0])
-N = np.array([-630.0])
+pilar.fl[2] = 3000.0
+pilar.fl[5] = 3000.0
+
+pilar.fl[0] = 630.0
+pilar.fl[3] = -630.0
 
 # Passando esforços para metodo do objeto barra que calcula armadura e armazena no vetor ASL e ASL2
-pilar.calcula_vetor_ASL(M, N)
+pilar.calcula_vetor_ASL()
 
 # Visualização de resultados das areas de armaduras do objeto barra
 print(pilar.ASL2)
@@ -123,11 +136,14 @@ secao = Secao("pilar", 25, 50, concreto.Eci, d = 45, d_linha = 5)
 pilar = Barra(1, no1, no2, secao, concreto, aco)
 
 # Esforços para teste
-M = np.array([10000.0])
-N = np.array([-1250.0])
+pilar.fl[2] = 10000.0
+pilar.fl[5] = 10000.0
+
+pilar.fl[0] = 1250.0
+pilar.fl[3] = -1250.0
 
 # Passando esforços para metodo do objeto barra que calcula armadura e armazena no vetor ASL e ASL2
-pilar.calcula_vetor_ASL(M, N)
+pilar.calcula_vetor_ASL()
 
 # Visualização de resultados das areas de armaduras do objeto barra
 print(pilar.ASL2)
@@ -154,12 +170,19 @@ secao = Secao("pilar", 25, 50, concreto.Eci, d = 45, d_linha = 5)
 pilar = Barra(1, no1, no2, secao, concreto, aco)
 
 # Esforços para teste
-M = np.array([10000.0])
-N = np.array([-2000.0])
+pilar.fl[2] = 10000.0
+pilar.fl[5] = 10000.0
+
+pilar.fl[0] = 2000.0
+pilar.fl[3] = -2000.0
 
 # Passando esforços para metodo do objeto barra que calcula armadura e armazena no vetor ASL e ASL2
-pilar.calcula_vetor_ASL(M, N)
+pilar.calcula_vetor_ASL()
 
 # Visualização de resultados das areas de armaduras do objeto barra
 print(pilar.ASL2)
 print(pilar.ASL)
+
+
+
+

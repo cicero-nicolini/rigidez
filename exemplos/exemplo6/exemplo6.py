@@ -1,7 +1,7 @@
 """
 EXEMPLO 6 - Exemplos do caderno de Concreto II do Quevedo
 
-Objetivo: determinar deslocamentos, solicitações, reações e armaduras
+Objetivo: determinar armaduras
 
 """
 from src.no import No

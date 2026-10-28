@@ -1,10 +1,14 @@
-from pathlib import Path
-import sys
+"""
+EXEMPLO 11 - Exemplos do professor Américo para cálculo de armaduras por flexo-tração
 
-RAIZ_PROJETO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(RAIZ_PROJETO))
+Objetivo: determinar armaduras
 
-from rigidez import *
+"""
+from src.no import No
+from src.concreto import Concreto
+from src.aco import Aco
+from src.secao import Secao
+from src.barra import Barra
 
 print("#########################################################################################################")
 print("Exemplo 1")
@@ -27,11 +31,14 @@ secao = Secao("viga", 20, 60, concreto.Eci, d = 55, d_linha = 5)
 viga = Barra(1, no1, no2, secao, concreto, aco)
 
 # Esforços para teste
-M = np.array([20000.0])
-N = np.array([500.0])
+viga.fl[2] = 20000.0
+viga.fl[5] = 20000.0
+
+viga.fl[0] = -500.0
+viga.fl[3] = 500.0
 
 # Passando esforços para metodo do objeto barra que calcula armadura e armazena no vetor ASL e ASL2
-viga.calcula_vetor_ASL(M, N)
+viga.calcula_vetor_ASL()
 
 # Visualização de resultados das areas de armaduras do objeto barra
 print(viga.ASL2)
@@ -61,11 +68,14 @@ secao = Secao("viga", 20, 60, concreto.Eci, d = 55, d_linha = 5)
 viga = Barra(1, no1, no2, secao, concreto, aco)
 
 # Esforços para teste
-M = np.array([50000.0])
-N = np.array([600.0])
+viga.fl[2] = 50000.0
+viga.fl[5] = 50000.0
+
+viga.fl[0] = -600.0
+viga.fl[3] = 600.0
 
 # Passando esforços para metodo do objeto barra que calcula armadura e armazena no vetor ASL e ASL2
-viga.calcula_vetor_ASL(M, N)
+viga.calcula_vetor_ASL()
 
 # Visualização de resultados das areas de armaduras do objeto barra
 print(viga.ASL2)
@@ -92,12 +102,19 @@ secao = Secao("viga", 20, 60, concreto.Eci, d = 55, d_linha = 5)
 viga = Barra(1, no1, no2, secao, concreto, aco)
 
 # Esforços para teste
-M = np.array([10000.0])
-N = np.array([500.0])
+viga.fl[2] = 10000.0
+viga.fl[5] = 10000.0
+
+viga.fl[0] = -500.0
+viga.fl[3] = 500.0
 
 # Passando esforços para metodo do objeto barra que calcula armadura e armazena no vetor ASL e ASL2
-viga.calcula_vetor_ASL(M, N)
+viga.calcula_vetor_ASL()
 
 # Visualização de resultados das areas de armaduras do objeto barra
 print(viga.ASL2)
 print(viga.ASL)
+
+
+
+
