@@ -42,6 +42,96 @@ class Visualizacao:
         self.modelo = modelo
         self._controles = []  # Mantém referências aos widgets Matplotlib.
 
+    @staticmethod
+    def _trechos_geometricos(barras):
+        """Agrupa barras reais consecutivas, colineares e de mesma seção."""
+        from collections import defaultdict
+        import numpy as np
+
+        reais = [b for b in barras if not getattr(b, 'ficticia', False)]
+        por_no = defaultdict(list)
+        for b in reais:
+            por_no[id(b.noi)].append(b)
+            por_no[id(b.noj)].append(b)
+
+        def compativeis(a, b, no):
+            if a.secao is not b.secao:
+                return False
+            def outro(barra):
+                return barra.noj if barra.noi is no else barra.noi
+            pa, pb = outro(a), outro(b)
+            va = np.array([pa.x-no.x, pa.y-no.y], dtype=float)
+            vb = np.array([pb.x-no.x, pb.y-no.y], dtype=float)
+            norma = np.linalg.norm(va)*np.linalg.norm(vb)
+            return norma > 0 and abs((va[0] * vb[1] - va[1] * vb[0])) <= 1e-8*norma and np.dot(va, vb) < 0
+
+        vizinhos = defaultdict(list)
+        for no_id, ligadas in por_no.items():
+            for i, a in enumerate(ligadas):
+                for b in ligadas[i+1:]:
+                    no = a.noi if id(a.noi) == no_id else a.noj
+                    if compativeis(a, b, no):
+                        vizinhos[id(a)].append(b)
+                        vizinhos[id(b)].append(a)
+        grupos, vistos = [], set()
+        for b in reais:
+            if id(b) in vistos:
+                continue
+            pilha, grupo = [b], []
+            while pilha:
+                atual = pilha.pop()
+                if id(atual) in vistos:
+                    continue
+                vistos.add(id(atual))
+                grupo.append(atual)
+                pilha.extend(vizinhos[id(atual)])
+            grupos.append(grupo)
+        return grupos
+
+    @staticmethod
+    def _pontos_rotulo_trechos(grupos, valores_por_barra):
+        """Retorna início/fim e extremos interiores de cada trecho.
+
+        valores_por_barra: id(barra) -> (valor_i, valor_j).
+        Os extremos são pesquisados nas extremidades de todos os elementos.
+        """
+        saida = []
+        for grupo in grupos:
+            dados = []
+            for b in grupo:
+                if id(b) not in valores_por_barra:
+                    continue
+                vi, vj = valores_por_barra[id(b)]
+                dados.extend([(b.noi, float(vi), b), (b.noj, float(vj), b)])
+            if not dados:
+                continue
+            # Ordenação pela projeção ao longo da direção do trecho.
+            b0 = grupo[0]
+            dx, dy = b0.noj.x-b0.noi.x, b0.noj.y-b0.noi.y
+            norm = (dx*dx+dy*dy)**0.5
+            ux, uy = dx/norm, dy/norm
+            dados.sort(key=lambda item: (item[0].x-b0.noi.x)*ux + (item[0].y-b0.noi.y)*uy)
+            # Para cada nó interno, conservam-se os valores dos dois lados
+            # quando existe descontinuidade de esforços.
+            minimo, maximo = dados[0][0], dados[-1][0]
+            candidatos = [dados[0], dados[-1]]
+            interiores = [d for d in dados if d[0] is not minimo and d[0] is not maximo]
+            if interiores:
+                maior = max(interiores, key=lambda d: d[1])
+                menor = min(interiores, key=lambda d: d[1])
+                if maior[1] > max(dados[0][1], dados[-1][1]) + 1e-9:
+                    candidatos.append(maior)
+                if menor[1] < min(dados[0][1], dados[-1][1]) - 1e-9:
+                    candidatos.append(menor)
+            vistos = set()
+            for no, valor, barra in candidatos:
+                chave = (id(no), round(valor, 7))
+                if chave in vistos:
+                    continue
+                vistos.add(chave)
+                saida.append((no, valor, barra))
+        return saida
+
     def calcular_momento_barra(self, barra, n_pontos=50):
         """Interpola linearmente o momento a partir de barra.fl, sem cargas.
 
@@ -80,13 +170,75 @@ class Visualizacao:
         else:
             fig = ax.figure
         if controles:
-            fig.subplots_adjust(left=0.07, right=0.77, top=0.88, bottom=0.16)
+            fig.subplots_adjust(left=0.06, right=0.77, top=0.94, bottom=0.10)
 
         xs, ys = [n.x for n in nos], [n.y for n in nos]
         xmin, xmax, ymin, ymax = min(xs), max(xs), min(ys), max(ys)
         dx, dy = xmax - xmin, ymax - ymin
         escala = max(dx, dy, 1.0)
         tam_apoio = 0.018 * escala
+
+        # Camada opcional: um único contorno contínuo para viga e pilares.
+        # A abertura é um furo real do caminho, não um retângulo branco.
+        geometria_viga = []
+        parametros = ('ap1', 'ap2', 'l', 'lf', 'b', 'h', 'a', 'c')
+        if all(hasattr(self.modelo, nome) for nome in parametros):
+            from matplotlib.path import Path as MplPath
+            from matplotlib.patches import PathPatch
+
+            m = self.modelo
+            h = float(m.h)
+            ap1, ap2 = float(m.ap1), float(m.ap2)
+            x0 = ap1 / 2.0
+            x1 = x0 + float(m.l)
+            y0, y1 = -h / 2.0, h / 2.0
+            xc = x0 + float(m.lf)
+            xa, xb = xc - float(m.b) / 2.0, xc + float(m.b) / 2.0
+            ya, yb = y0 + float(m.c), y0 + float(m.c) + float(m.a)
+
+            if h > 0 and ap1 > 0 and ap2 > 0 and x1 > x0:
+                # Centros dos pilares coincidem com os nós extremos.
+                apoio_esq = min(nos, key=lambda n: n.x)
+                apoio_dir = max(nos, key=lambda n: n.x)
+                xl = float(apoio_esq.x) - ap1 / 2.0
+                xle = float(apoio_esq.x) + ap1 / 2.0
+                xrd = float(apoio_dir.x) - ap2 / 2.0
+                xr = float(apoio_dir.x) + ap2 / 2.0
+                ye_inf, ye_sup = float(apoio_esq.y) - h, float(apoio_esq.y) + h
+                yd_inf, yd_sup = float(apoio_dir.y) - h, float(apoio_dir.y) + h
+
+                # Percorre apenas a fronteira EXTERNA da união.
+                # Não há linhas internas separando a viga dos pilares.
+                contorno = [
+                    (xl, ye_inf), (xl, ye_sup),
+                    (xle, ye_sup), (xle, y1),
+                    (xrd, y1), (xrd, yd_sup),
+                    (xr, yd_sup), (xr, yd_inf),
+                    (xrd, yd_inf), (xrd, y0),
+                    (xle, y0), (xle, ye_inf),
+                ]
+
+                def caminho_fechado(pontos):
+                    vertices = pontos + [pontos[0]]
+                    codigos = ([MplPath.MOVETO]
+                               + [MplPath.LINETO] * (len(pontos) - 1)
+                               + [MplPath.CLOSEPOLY])
+                    return MplPath(vertices, codigos)
+
+                caminho = caminho_fechado(contorno)
+                if xle < xa < xb < xrd and y0 < ya < yb < y1:
+                    # Sentido inverso ao contorno externo para criar o furo.
+                    abertura = caminho_fechado([
+                        (xa, ya), (xb, ya), (xb, yb), (xa, yb)
+                    ])
+                    caminho = MplPath.make_compound_path(caminho, abertura)
+
+                bloco = PathPatch(
+                    caminho, facecolor='#808080', edgecolor='#777777',
+                    linewidth=0.8, alpha=0.20, zorder=0.2
+                )
+                ax.add_patch(bloco)
+                geometria_viga.append(bloco)
 
         grupos = {'Nós': [], 'Números dos nós': [], 'Números das barras': [],
                   'Apoios': [], 'Cargas distribuídas': [], 'Forças nodais': [], 'Momentos nodais': []}
@@ -402,39 +554,36 @@ class Visualizacao:
             objetos_momento.append((linha, preenchimento,
                                      x_base, y_base, c, s, M))
 
-            # Etiquetas com momentos internos das extremidades.
-            for k in (0, -1):
-                # Uma etiqueta por posição do diagrama: barras adjacentes
-                # frequentemente compartilham o mesmo ponto extremo.
-                px = x_base[k] + s * escala_momento * M[k]
-                py = y_base[k] - c * escala_momento * M[k]
-                chave = (round(float(px), 6), round(float(py), 6))
-                if chave not in pontos_rotulados:
-                    pontos_rotulados.add(chave)
-                    anot = ax.annotate(
-                        f'{M[k]:.3g}', (px, py),
-                        xytext=(5, 8 if k == 0 else -11),
-                        textcoords='offset points', fontsize=7,
-                        color='#126a32', visible=False, zorder=10)
-                    etiquetas_momento.append((anot, x_base[k], y_base[k],
-                                               c, s, float(M[k])))
-                # Os extremos globais aparecem junto ao diagrama,
-                # mesmo quando as demais etiquetas estão ocultas.
-                ponto = (float(M[k]), barra.num, 'i' if k == 0 else 'j')
-                if ponto == minimo_global or ponto == maximo_global:
-                    nome = 'Mmín' if ponto == minimo_global else 'Mmáx'
-                    anot_extremo = ax.annotate(
-                        f'{nome} = {M[k]:.4g}',
-                        (x_base[k], y_base[k]),
-                        xytext=(9, -15 if M[k] >= 0 else 12),
-                        textcoords='offset points', fontsize=8,
-                        fontweight='bold', color='#126a32',
-                        bbox=dict(boxstyle='round,pad=0.2',
-                                  facecolor='white', alpha=0.85,
-                                  edgecolor='none'),
-                        visible=False, zorder=12)
-                    etiquetas_extremos.append(
-                        (anot_extremo, x_base[k], y_base[k], c, s, float(M[k])))
+        trechos = self._trechos_geometricos(barras)
+        momentos_por_barra = {id(b): (float(m[0]), float(m[-1]))
+                              for b, _, _, _, _, _, m in dados_momento}
+        rotulos_m = self._pontos_rotulo_trechos(trechos, momentos_por_barra)
+        for no, valor, barra in rotulos_m:
+            c = (barra.noj.x-barra.noi.x)/barra.L
+            sn = (barra.noj.y-barra.noi.y)/barra.L
+            xb, yb = float(no.x), float(no.y)
+            anot = ax.annotate(f'{valor:.3g}', (xb, yb),
+                               xytext=(5, 8), textcoords='offset points',
+                               fontsize=7, color='#126a32', visible=False, zorder=10)
+            etiquetas_momento.append((anot, xb, yb, c, sn, valor))
+
+        # Extremos globais continuam disponíveis no controle independente.
+        if rotulos_m:
+            for nome, item in (('Mmín', min(rotulos_m, key=lambda r: r[1])),
+                               ('Mmáx', max(rotulos_m, key=lambda r: r[1]))):
+                no, valor, barra = item
+                c = (barra.noj.x-barra.noi.x)/barra.L
+                sn = (barra.noj.y-barra.noi.y)/barra.L
+                xb, yb = float(no.x), float(no.y)
+                anot = ax.annotate(f'{nome} = {valor:.4g}', (xb, yb),
+                                   xytext=(9, -15 if valor >= 0 else 12),
+                                   textcoords='offset points', fontsize=8,
+                                   fontweight='bold', color='#126a32',
+                                   bbox=dict(boxstyle='round,pad=0.2',
+                                             facecolor='white', alpha=0.85,
+                                             edgecolor='none'),
+                                   visible=False, zorder=12)
+                etiquetas_extremos.append((anot, xb, yb, c, sn, valor))
 
         def atualizar_momento(fator):
             for linha, preenchimento, xb, yb, c, s, M in objetos_momento:
@@ -499,18 +648,16 @@ class Visualizacao:
                 preenchimento = ax.fill([], [], color=cor, alpha=0.13,
                                          zorder=3, visible=False)[0]
                 objetos.append((linha, preenchimento, xb, yb, c, s, q))
-                for k in (0, 1):
-                    px = xb[k] + s*fator_auto*q[k]
-                    py = yb[k] - c*fator_auto*q[k]
-                    chave = (round(float(px), 5), round(float(py), 5))
-                    if chave in pontos_vistos:
-                        continue
-                    pontos_vistos.add(chave)
-                    anot = ax.annotate(f'{q[k]:.3g}', (px, py),
-                                       xytext=(5, 8 if k == 0 else -11),
-                                       textcoords='offset points', fontsize=7,
-                                       color=cor, visible=False, zorder=10)
-                    etiquetas.append((anot, xb[k], yb[k], c, s, q[k]))
+            valores_nv = {id(b): (qi, qj)
+                          for b, _, _, _, _, _, qi, qj in dados}
+            for no, valor, barra in self._pontos_rotulo_trechos(trechos, valores_nv):
+                c = (barra.noj.x-barra.noi.x)/barra.L
+                sn = (barra.noj.y-barra.noi.y)/barra.L
+                xb, yb = float(no.x), float(no.y)
+                anot = ax.annotate(f'{valor:.3g}', (xb, yb),
+                                   xytext=(5, 8), textcoords='offset points',
+                                   fontsize=7, color=cor, visible=False, zorder=10)
+                etiquetas.append((anot, xb, yb, c, sn, valor))
 
             def atualizar(fator, objetos=objetos, etiquetas=etiquetas):
                 for linha, preenchimento, xb, yb, c, s, q in objetos:
@@ -591,7 +738,7 @@ class Visualizacao:
                         sentidos[1] = sentidos[0]
                 else:
                     sentidos = np.ones(2, dtype=float)
-                dados.append((xi, yi, vx/L, vy/L, L, valores, sentidos))
+                dados.append((barra, xi, yi, vx/L, vy/L, L, valores, sentidos))
             dados_armadura[atributo] = dados
 
         for titulo, atributos in (
@@ -611,7 +758,7 @@ class Visualizacao:
             for atributo, grupo, _, cor, sentido in configuracoes_armadura:
                 if grupo != titulo:
                     continue
-                for xi, yi, c, sn, L, valores, sentidos_m in dados_armadura[atributo]:
+                for barra, xi, yi, c, sn, L, valores, sentidos_m in dados_armadura[atributo]:
                     xb = np.array([xi, xi + c*L])
                     yb = np.array([yi, yi + sn*L])
                     linha, = ax.plot([], [], color=cor, lw=1.8, marker='o',
@@ -621,23 +768,31 @@ class Visualizacao:
                     objetos.append((linha, preenchimento, xb, yb, c, sn,
                                     valores, sentido*sentidos_m))
                     grupos[titulo].extend((linha, preenchimento))
-                    for k in (0, 1):
-                        valor = float(valores[k])
-                        sinal_ponto = float(sentido * sentidos_m[k])
-                        px = float(xb[k] + sinal_ponto*sn*fator_auto*valor)
-                        py = float(yb[k] - sinal_ponto*c*fator_auto*valor)
-                        chave = (atributo, round(px, 5), round(py, 5),
-                                 round(valor, 8))
-                        if chave in pontos_vistos:
-                            continue
-                        pontos_vistos.add(chave)
-                        anot = ax.annotate(f'{valor:.3g}', (px, py),
-                                           xytext=(5, 8 if k == 0 else -11),
-                                           textcoords='offset points', fontsize=7,
-                                           color=cor, visible=False, zorder=10)
-                        etiquetas.append((anot, float(xb[k]), float(yb[k]),
-                                          c, sn, valor, sinal_ponto))
-                        grupos[nome_valores].append(anot)
+            # Etiquetas apenas nas extremidades e nos extremos interiores
+            # de cada trecho, separadamente para cada tipo de armadura.
+            for atributo, grupo, _, cor, sentido in configuracoes_armadura:
+                if grupo != titulo:
+                    continue
+                valores_atributo = {
+                    id(barra): (float(valores[0]), float(valores[1]))
+                    for barra, _, _, _, _, _, valores, _ in dados_armadura[atributo]
+                }
+                for no, valor, barra in self._pontos_rotulo_trechos(trechos, valores_atributo):
+                    c = (barra.noj.x-barra.noi.x)/barra.L
+                    sn = (barra.noj.y-barra.noi.y)/barra.L
+                    momentos = np.asarray(barra.esforcos_exibicao, dtype=float)
+                    momento = -momentos[2] if no is barra.noi else momentos[5]
+                    sinal_ponto = float(sentido * (np.sign(momento) or 1.0)) if atributo != 'ASW_S' else 1.0
+                    xb, yb = float(no.x), float(no.y)
+                    chave = (atributo, round(xb, 5), round(yb, 5), round(valor, 8))
+                    if chave in pontos_vistos:
+                        continue
+                    pontos_vistos.add(chave)
+                    anot = ax.annotate(f'{valor:.3g}', (xb, yb),
+                                       xytext=(5, 8), textcoords='offset points',
+                                       fontsize=7, color=cor, visible=False, zorder=10)
+                    etiquetas.append((anot, xb, yb, c, sn, valor, sinal_ponto))
+                    grupos[nome_valores].append(anot)
 
             def atualizar_armadura(fator, objetos=objetos, etiquetas=etiquetas):
                 for linha, preenchimento, xb, yb, c, sn, valores, sentidos in objetos:
@@ -774,32 +929,33 @@ class Visualizacao:
 
 
 
+        grupos['Geometria da viga'] = geometria_viga
+
+        # Os rótulos numéricos são controlados por uma única opção "Valores".
+        # As coleções de artistas continuam separadas internamente.
         estados = {
-                'Nós': True,
-                'Números dos nós': mostrar_nos,
-                'Números das barras': mostrar_barras,
-                'Apoios': mostrar_apoios,
-                'Cargas distribuídas': True,
-                'Forças nodais': True,
-                'Momentos nodais': True,
-                'Deformada': False,
-                'Momento fletor': False,
-                'Extremos do momento': False,
-                'Valores dos momentos': False,
-                'Esforço normal': False,
-                'Valores N': False,
-                'Esforço cortante': False,
-                'Valores V': False,
-                'Armadura longitudinal': False,
-                'Valores armadura longitudinal': False,
-                'Armadura transversal': False,
-                'Valores armadura transversal': False,
-                'Grade': False
+            'Geometria da viga': False,
+            'Nós': True,
+            'Números dos nós': mostrar_nos,
+            'Números das barras': mostrar_barras,
+            'Apoios': mostrar_apoios,
+            'Cargas distribuídas': True,
+            'Forças nodais': True,
+            'Momentos nodais': True,
+            'Deformada': False,
+            'Momento fletor': False,
+            'Esforço normal': False,
+            'Esforço cortante': False,
+            'Armadura longitudinal': False,
+            'Armadura transversal': False,
+            'Valores': False,
         }
         grupos['Deformada'] = linhas_deformada
+        # Inicialização: artistas não controlados diretamente ficam ocultos.
         for nome, artistas in grupos.items():
+            visivel = estados.get(nome, False)
             for artista in artistas:
-                artista.set_visible(estados[nome])
+                artista.set_visible(visivel)
 
         margem_x = max(dx * 0.025, escala * 0.015)
         margem_y = max(dy * 0.15, escala * 0.065)
@@ -807,87 +963,65 @@ class Visualizacao:
                    (ymin-margem_y, ymax+margem_y))
         ax.set_xlim(*limites[0])
         ax.set_ylim(*limites[1])
-        ax.set_aspect('equal', adjustable='box')
+        ax.set_aspect('equal', adjustable='datalim')
         ax.set_xlabel('x (unidade do modelo)')
         ax.set_ylabel('y (unidade do modelo)')
         ax.set_title('Modelo estrutural — geometria e apoios')
-        ax.grid(estados['Grade'], alpha=.18)
+        ax.grid(False, alpha=.18)
 
         if controles:
             area = fig.add_axes([.79, .34, .20, .63])
             area.set_title('Exibir', fontsize=10, loc='left')
-            nomes = list(estados)
-            checks = CheckButtons(area, nomes, [estados[n] for n in nomes])
+            nomes = [
+                'Geometria da viga', 'Nós', 'Números dos nós',
+                'Números das barras', 'Apoios', 'Cargas distribuídas',
+                'Forças nodais', 'Momentos nodais', 'Deformada',
+                'Momento fletor', 'Esforço Normal', 'Esforço cortante',
+                'Armadura longitudinal', 'Armadura transversal', 'Valores',
+            ]
+            nome_interno = {'Esforço Normal': 'Esforço normal'}
+            # Ícones quadrados de 12 pt (Matplotlib >= 3.7).
+            # O parâmetro `s` corresponde à área em pontos quadrados.
+            checks = CheckButtons(
+                area, nomes, [estados[nome_interno.get(n, n)] for n in nomes],
+                frame_props={'s': 12**2, 'linewidth': 1.4},
+                check_props={'s': 12**2, 'linewidth': 1.8},
+            )
             for spine in area.spines.values():
                 spine.set_visible(False)
 
-            def alternar(nome):
+            def atualizar_valores():
+                """Exibe valores somente dos diagramas ativos."""
+                mostrar = estados['Valores']
+                momento_ativo = mostrar and estados['Momento fletor']
+                for artista in grupos['Valores dos momentos']:
+                    artista.set_visible(momento_ativo)
+                # Os extremos por trecho já fazem parte dos valores comuns;
+                # não duplicar os rótulos globais do momento.
+                for artista in grupos['Extremos do momento']:
+                    artista.set_visible(False)
+                for tipo, info in diagramas_nv.items():
+                    ativo = mostrar and estados[tipo]
+                    for artista in grupos[info['nome_valores']]:
+                        artista.set_visible(ativo)
+                for tipo, info in diagramas_armadura.items():
+                    ativo = mostrar and estados[tipo]
+                    for artista in grupos[info['nome_valores']]:
+                        artista.set_visible(ativo)
+
+            def alternar(rotulo):
+                nome = nome_interno.get(rotulo, rotulo)
                 estados[nome] = not estados[nome]
-                if nome == 'Grade':
-                    ax.grid(estados[nome], alpha=.18)
-                else:
+                if nome != 'Valores':
                     for artista in grupos[nome]:
                         artista.set_visible(estados[nome])
-
-                # Os diagramas N, V e M usam controles separados.
-                # Valores aparecem apenas com o diagrama correspondente.
-                for tipo, info in diagramas_nv.items():
-                    nome_valores = info['nome_valores']
-                    visivel = estados[tipo] and estados[nome_valores]
-                    for artista in grupos[nome_valores]:
-                        artista.set_visible(visivel)
-                for tipo, info in diagramas_armadura.items():
-                    nome_valores = info['nome_valores']
-                    visivel = estados[tipo] and estados[nome_valores]
-                    for artista in grupos[nome_valores]:
-                        artista.set_visible(visivel)
-                if nome in diagramas_armadura and estados[nome]:
-                    if estados['Cargas distribuídas']:
-                        checks.set_active(nomes.index('Cargas distribuídas'))
-                if nome in ('Esforço normal', 'Esforço cortante') and estados[nome]:
-                    # Oculta cargas para melhorar a leitura.
-                    if estados['Cargas distribuídas']:
-                        checks.set_active(nomes.index('Cargas distribuídas'))
-
-                # Oculta carregamentos ao ativar o diagrama de momentos.
-                # Ao desativar o diagrama, mantém o estado escolhido pelo usuário.
-                if nome == 'Momento fletor' and estados[nome]:
-                    if not estados['Extremos do momento']:
-                        checks.set_active(nomes.index('Extremos do momento'))
-                    if estados['Cargas distribuídas']:
-                        checks.set_active(nomes.index('Cargas distribuídas'))
-                    if estados['Valores dos momentos']:
-                        for artista in grupos['Valores dos momentos']:
-                            artista.set_visible(True)
-                if nome == 'Momento fletor' and not estados[nome]:
-                    for artista in grupos['Extremos do momento']:
-                        artista.set_visible(False)
-                    for artista in grupos['Valores dos momentos']:
-                        artista.set_visible(False)
-                if nome == 'Extremos do momento':
-                    for artista in grupos[nome]:
-                        artista.set_visible(estados[nome] and estados['Momento fletor'])
-                if nome == 'Valores dos momentos':
-                    for artista in grupos[nome]:
-                        artista.set_visible(
-                            estados[nome] and estados['Momento fletor'])
-
-                # Evita sobrepor a etiqueta comum à de extremo global.
-                if nome in ('Momento fletor', 'Valores dos momentos',
-                            'Extremos do momento'):
-                    exibir_valores = (estados['Momento fletor']
-                                     and estados['Valores dos momentos'])
-                    exibir_extremos = (estados['Momento fletor']
-                                      and estados['Extremos do momento'])
-                    for anot, xb, yb, c, s, valor in etiquetas_momento:
-                        repetida = False
-                        if exibir_extremos:
-                            for _, xe, ye, ce, se, ve in etiquetas_extremos:
-                                if (abs(anot.xy[0] - (xe + se*slider_m.val*ve)) < 1e-5
-                                        and abs(anot.xy[1] - (ye - ce*slider_m.val*ve)) < 1e-5):
-                                    repetida = True
-                                    break
-                        anot.set_visible(exibir_valores and not repetida)
+                # Ao ativar diagramas, oculta as cargas para evitar sobreposição.
+                if (nome in ('Momento fletor', 'Esforço normal',
+                             'Esforço cortante', 'Armadura longitudinal',
+                             'Armadura transversal') and estados[nome]
+                        and estados['Cargas distribuídas']):
+                    checks.set_active(nomes.index('Cargas distribuídas'))
+                atualizar_valores()
                 fig.canvas.draw_idle()
 
             checks.on_clicked(alternar)
@@ -904,10 +1038,9 @@ class Visualizacao:
             self._controles = [checks, reset]
 
             area_escala_m = fig.add_axes([.82, .215, .14, .020])
-            slider_m = Slider(area_escala_m, 'M', 0.0,
-                              max(5.0*escala_momento, 1.0),
-                              valinit=escala_momento, valfmt='%.3g')
-            slider_m.on_changed(atualizar_momento)
+            slider_m = Slider(area_escala_m, 'M', 0.0, 5.0,
+                              valinit=1.0, valfmt='%.2f')
+            slider_m.on_changed(lambda fator: atualizar_momento(escala_momento * fator))
             self._controles.append(slider_m)
             # Sliders independentes dos esforços N e V.
             for tipo, sigla, y_slider in (
@@ -918,10 +1051,13 @@ class Visualizacao:
                 area_nv = fig.add_axes([.82, y_slider, .14, .020])
                 controle_nv = Slider(
                     area_nv, sigla, 0.0,
-                    max(5.0 * info['fator'], 1.0),
-                    valinit=info['fator'], valfmt='%.3g'
+                    5.0,
+                    valinit=1.0, valfmt='%.2f'
                 )
-                controle_nv.on_changed(info['atualizar'])
+                controle_nv.on_changed(
+                    lambda fator, atualizar=info['atualizar'], base=info['fator']:
+                    atualizar(base * fator)
+                )
                 self._controles.append(controle_nv)
 
 
@@ -935,10 +1071,13 @@ class Visualizacao:
                 area_arm = fig.add_axes([.82, y_slider, .14, .014])
                 controle_arm = Slider(
                     area_arm, sigla, 0.0,
-                    max(5.0 * info['fator'], 1.0),
-                    valinit=info['fator'], valfmt='%.3g'
+                    5.0,
+                    valinit=1.0, valfmt='%.2f'
                 )
-                controle_arm.on_changed(info['atualizar'])
+                controle_arm.on_changed(
+                    lambda fator, atualizar=info['atualizar'], base=info['fator']:
+                    atualizar(base * fator)
+                )
                 self._controles.append(controle_arm)
 
             if linhas_deformada:
@@ -951,12 +1090,12 @@ class Visualizacao:
                     ax=area_slider,
                     label="Def.",
                     valmin=0.0,
-                    valmax=max(5.0 * escala_auto, 1.0),
-                    valinit=escala_auto,
-                    valfmt="%.1f"
+                    valmax=5.0,
+                    valinit=1.0,
+                    valfmt="%.2f"
                 )
 
-                slider.on_changed(atualizar_deformada)
+                slider.on_changed(lambda fator: atualizar_deformada(escala_auto * fator))
 
                 self._controles.append(slider)
 
