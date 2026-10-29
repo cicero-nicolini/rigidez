@@ -969,6 +969,36 @@ class Visualizacao:
         ax.set_title('Modelo estrutural — geometria e apoios')
         ax.grid(False, alpha=.18)
 
+        # Zoom com a roda do mouse, centrado na posição do cursor.
+        # Funciona apenas sobre a área do gráfico, não sobre os controles.
+        def zoom_scroll(event):
+            if event.inaxes is not ax or event.xdata is None or event.ydata is None:
+                return
+            if event.button == 'up':
+                fator = 1.0 / 1.2  # Aproximar.
+            elif event.button == 'down':
+                fator = 1.2        # Afastar.
+            else:
+                return
+
+            x0, x1 = ax.get_xlim()
+            y0, y1 = ax.get_ylim()
+            xc, yc = float(event.xdata), float(event.ydata)
+            # Mantém o ponto sob o cursor na mesma posição relativa.
+            novo_x0 = xc - (xc - x0) * fator
+            novo_x1 = xc + (x1 - xc) * fator
+            novo_y0 = yc - (yc - y0) * fator
+            novo_y1 = yc + (y1 - yc) * fator
+            # Evita limites degenerados em aproximações extremas.
+            if abs(novo_x1 - novo_x0) < 1e-9 or abs(novo_y1 - novo_y0) < 1e-9:
+                return
+            ax.set_xlim(novo_x0, novo_x1)
+            ax.set_ylim(novo_y0, novo_y1)
+            fig.canvas.draw_idle()
+
+        # Guarda a referência à conexão para permitir desconexão futura.
+        self._zoom_scroll_cid = fig.canvas.mpl_connect('scroll_event', zoom_scroll)
+
         if controles:
             area = fig.add_axes([.79, .34, .20, .63])
             area.set_title('Exibir', fontsize=10, loc='left')
