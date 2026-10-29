@@ -30,6 +30,7 @@ modelo = Modelo(bw = 30.0,
                 modelo = 1,
                 α = 90.0,
                 θ = 30.0,
-                αE = 1)
+                αE = 1,
+                espacamento_maximo = 20.0)
 
 modelo.desenha_area_armaduras()

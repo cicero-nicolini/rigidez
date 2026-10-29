@@ -53,6 +53,7 @@ class Barra:
         self.fep = np.zeros((6))
         self.f = np.zeros((6))
         self.fl = np.zeros((6))
+        self.ficticia = False  # Elemento auxiliar: esforços omitidos na apresentação.
         self.u = np.zeros((6))
         self.q = np.zeros((6),dtype=int)
         self.x = np.zeros((2))
@@ -65,6 +66,13 @@ class Barra:
         self.α = α
         self.θ = θ
         
+    @property
+    def esforcos_exibicao(self):
+        """Esforços para relatórios/diagramas, sem alterar os esforços reais fl."""
+        if self.ficticia:
+            return np.zeros(6, dtype=float)
+        return self.fl.copy()
+
     def comprimento_barra(self) -> None:
         """Calcula o comprimento da barra."""
 

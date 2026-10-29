@@ -55,7 +55,7 @@ class Visualizacao:
         L = float(barra.L)
         if L <= 0:
             raise ValueError(f"Barra {barra.num} com comprimento invalido.")
-        fl = np.asarray(barra.fl, dtype=float).ravel()
+        fl = np.asarray(barra.esforcos_exibicao, dtype=float).ravel()
         if fl.size < 6:
             raise ValueError(f"Barra {barra.num}: barra.fl deve ter 6 componentes.")
 
@@ -377,8 +377,9 @@ class Visualizacao:
                 continue
             c, s = dx_b/L, dy_b/L
             dados_momento.append((barra, xi, yi, c, s, x_local, M))
-            extremos.extend([(float(M[0]), barra.num, 'i'),
-                             (float(M[-1]), barra.num, 'j')])
+            if not getattr(barra, 'ficticia', False):
+                extremos.extend([(float(M[0]), barra.num, 'i'),
+                                 (float(M[-1]), barra.num, 'j')])
 
         Mmax = max((np.max(np.abs(d[6])) for d in dados_momento), default=0.0)
         escala_momento = 0.06 * escala / Mmax if Mmax > 1e-12 else 1.0
@@ -472,7 +473,7 @@ class Visualizacao:
         ):
             dados = []
             for barra in barras:
-                fl = np.asarray(barra.fl, dtype=float).ravel()
+                fl = np.asarray(barra.esforcos_exibicao, dtype=float).ravel()
                 if fl.size < 6:
                     raise ValueError(f'Barra {barra.num}: fl deve ter 6 componentes.')
                 xi, yi = barra.noi.x, barra.noi.y
@@ -554,6 +555,8 @@ class Visualizacao:
         for atributo, titulo, nome_valores, cor, sentido in configuracoes_armadura:
             dados = []
             for barra in barras:
+                if getattr(barra, "ficticia", False):
+                    continue
                 bruto = getattr(barra, atributo, None)
                 if bruto is None:
                     continue

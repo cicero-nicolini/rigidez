@@ -1,3 +1,4 @@
+import math
 from .no import No
 from .concreto import Concreto
 from .aco import Aco
@@ -12,7 +13,7 @@ from .visualizacao import print_vetor, print_matriz
 class Modelo:
     """Representa as propriedades e parâmetros referente ao objeto modelo."""
 
-    def __init__(self, bw:float, h:float, l:float, lf:float, a:float, b:float, c:float, ap1:float, ap2:float, w:float, fck:float, fyk:float, fywk:float, modelo:int, α:float = 90.0, θ:float = 30.0, αE:float = 1.0, d:float = None, d_linha:float = None) -> None:
+    def __init__(self, bw:float, h:float, l:float, lf:float, a:float, b:float, c:float, ap1:float, ap2:float, w:float, fck:float, fyk:float, fywk:float, modelo:int, α:float = 90.0, θ:float = 30.0, αE:float = 1.0, d:float = None, d_linha:float = None, espacamento_maximo:float = None) -> None:
         """
         Instancia um objeto da classe Modelo
 
@@ -38,6 +39,10 @@ class Modelo:
             modelo: modelo de cálculo da armadura transversal (modelo 1 ou modelo 2)
             α: inclinação dos estribos (α deve estar entre 45° e 90°)
             θ: inclinação da biela comprimida de concreto (necessário para modelo 2, θ deve estar entre 30° e 45°)
+            espacamento_maximo: comprimento máximo de cada elemento, em cm.
+                Se None, mantém oito elementos por trecho horizontal principal
+                e um elemento nos demais trechos (malha original).
+                As barras de seção fictícia nunca são subdivididas.
         """
 
         self.bw = bw
@@ -71,58 +76,27 @@ class Modelo:
         self.y_asw_s = [] 
         self.linhas_asw_s = []
 
-        #Definição dos nós
-        
-        no1 = No(1, 0.0, 0.0)
-        no2 = No(2, self.ap1/2.0, 0.0)
-        no11 = No(11, self.ap1/2.0 + ((self.lf - self.b/2.0 - self.bw/2.0)*(1.0/8.0)), 0.0)
-        no12 = No(12, self.ap1/2.0 + ((self.lf - self.b/2.0 - self.bw/2.0)*(2.0/8.0)), 0.0)
-        no13 = No(13, self.ap1/2.0 + ((self.lf - self.b/2.0 - self.bw/2.0)*(3.0/8.0)), 0.0)
-        no14 = No(14, self.ap1/2.0 + ((self.lf - self.b/2.0 - self.bw/2.0)*(4.0/8.0)), 0.0)
-        no15 = No(15, self.ap1/2.0 + ((self.lf - self.b/2.0 - self.bw/2.0)*(5.0/8.0)), 0.0)
-        no16 = No(16, self.ap1/2.0 + ((self.lf - self.b/2.0 - self.bw/2.0)*(6.0/8.0)), 0.0)
-        no17 = No(17, self.ap1/2.0 + ((self.lf - self.b/2.0 - self.bw/2.0)*(7.0/8.0)), 0.0)
-        no3 = No(3, self.ap1/2.0 + self.lf - self.b/2.0 - self.bw/2.0, 0.0)
-        no4 = No(4, self.ap1/2.0 + self.lf - self.b/2.0 - self.bw/2.0, -(self.h-self.c)/2.0)
-        no18 = No(18, self.ap1/2.0 + self.lf - self.b/2.0 - self.bw/2.0 + ((self.b + self.bw)*(1.0/8.0)), -(self.h-self.c)/2.0)
-        no19 = No(19, self.ap1/2.0 + self.lf - self.b/2.0 - self.bw/2.0 + ((self.b + self.bw)*(2.0/8.0)), -(self.h-self.c)/2.0)
-        no20 = No(20, self.ap1/2.0 + self.lf - self.b/2.0 - self.bw/2.0 + ((self.b + self.bw)*(3.0/8.0)), -(self.h-self.c)/2.0)
-        no21 = No(21, self.ap1/2.0 + self.lf - self.b/2.0 - self.bw/2.0 + ((self.b + self.bw)*(4.0/8.0)), -(self.h-self.c)/2.0)
-        no22 = No(22, self.ap1/2.0 + self.lf - self.b/2.0 - self.bw/2.0 + ((self.b + self.bw)*(5.0/8.0)), -(self.h-self.c)/2.0)
-        no23 = No(23, self.ap1/2.0 + self.lf - self.b/2.0 - self.bw/2.0 + ((self.b + self.bw)*(6.0/8.0)), -(self.h-self.c)/2.0)
-        no24 = No(24, self.ap1/2.0 + self.lf - self.b/2.0 - self.bw/2.0 + ((self.b + self.bw)*(7.0/8.0)), -(self.h-self.c)/2.0)
-        no7 = No(7, self.ap1/2.0 + self.lf + self.b/2.0 + self.bw/2.0, -(self.h-self.c)/2.0)
-        no5 = No(5, self.ap1/2.0 + self.lf - self.b/2.0 - self.bw/2.0, (self.a+self.c)/2.0)
-        no25 = No(25, self.ap1/2.0 + self.lf - self.b/2.0 - self.bw/2.0 + ((self.b + self.bw)*(1.0/8.0)), (self.a+self.c)/2.0)
-        no26 = No(26, self.ap1/2.0 + self.lf - self.b/2.0 - self.bw/2.0 + ((self.b + self.bw)*(2.0/8.0)), (self.a+self.c)/2.0)
-        no27 = No(27, self.ap1/2.0 + self.lf - self.b/2.0 - self.bw/2.0 + ((self.b + self.bw)*(3.0/8.0)), (self.a+self.c)/2.0)
-        no28 = No(28, self.ap1/2.0 + self.lf - self.b/2.0 - self.bw/2.0 + ((self.b + self.bw)*(4.0/8.0)), (self.a+self.c)/2.0)
-        no29 = No(29, self.ap1/2.0 + self.lf - self.b/2.0 - self.bw/2.0 + ((self.b + self.bw)*(5.0/8.0)), (self.a+self.c)/2.0)
-        no30 = No(30, self.ap1/2.0 + self.lf - self.b/2.0 - self.bw/2.0 + ((self.b + self.bw)*(6.0/8.0)), (self.a+self.c)/2.0)
-        no31 = No(31, self.ap1/2.0 + self.lf - self.b/2.0 - self.bw/2.0 + ((self.b + self.bw)*(7.0/8.0)), (self.a+self.c)/2.0)
-        no8 = No(8, self.ap1/2.0 + self.lf + self.b/2.0 + self.bw/2.0, (self.a+self.c)/2.0)
-        no6 = No(6, self.ap1/2.0 + self.lf + self.b/2.0 + self.bw/2.0, 0.0)
-        no32 = No(32, self.ap1/2.0 + self.lf + self.b/2.0 + self.bw/2.0 + ((self.l - self.lf - self.b/2.0 - self.bw/2.0)*(1.0/8.0)), 0.0)
-        no33 = No(33, self.ap1/2.0 + self.lf + self.b/2.0 + self.bw/2.0 + ((self.l - self.lf - self.b/2.0 - self.bw/2.0)*(2.0/8.0)), 0.0)
-        no34 = No(34, self.ap1/2.0 + self.lf + self.b/2.0 + self.bw/2.0 + ((self.l - self.lf - self.b/2.0 - self.bw/2.0)*(3.0/8.0)), 0.0)
-        no35 = No(35, self.ap1/2.0 + self.lf + self.b/2.0 + self.bw/2.0 + ((self.l - self.lf - self.b/2.0 - self.bw/2.0)*(4.0/8.0)), 0.0)
-        no36 = No(36, self.ap1/2.0 + self.lf + self.b/2.0 + self.bw/2.0 + ((self.l - self.lf - self.b/2.0 - self.bw/2.0)*(5.0/8.0)), 0.0)
-        no37 = No(37, self.ap1/2.0 + self.lf + self.b/2.0 + self.bw/2.0 + ((self.l - self.lf - self.b/2.0 - self.bw/2.0)*(6.0/8.0)), 0.0)
-        no38 = No(38, self.ap1/2.0 + self.lf + self.b/2.0 + self.bw/2.0 + ((self.l - self.lf - self.b/2.0 - self.bw/2.0)*(7.0/8.0)), 0.0)
-        no9 = No(9, self.ap1/2.0 + self.l, 0.0)
-        no10 = No(10, self.ap1/2.0 + self.l + self.ap2/2.0, 0.0)
-        self.nos = [no1, no2, no3, no4, no5, no6, no7, no8, no9, no10, no11, no12, no13,
-                    no14, no15, no16, no17, no18, no19, no20, no21, no22, no23, no24, no25,
-                    no26, no27, no28, no29, no30, no31, no32, no33, no34, no35, no36, no37, no38]
-
-        #Aplicação das restrições nodais
-        
-        no1.Tx = False
-        no1.Ty = True
-        no1.Rz = False
-        no10.Tx = True
-        no10.Ty = True
-        no10.Rz = False
+        # Pontos obrigatórios: apoios, encontros dos banzos e montantes.
+        x_esq = self.ap1 / 2.0 + self.lf - (self.b + self.bw) / 2.0
+        x_dir = self.ap1 / 2.0 + self.lf + (self.b + self.bw) / 2.0
+        y_inf = -(self.h - self.c) / 2.0
+        y_sup = (self.a + self.c) / 2.0
+        coordenadas = [
+            (0.0, 0.0), (self.ap1 / 2.0, 0.0),
+            (x_esq, 0.0), (x_esq, y_inf), (x_esq, y_sup),
+            (x_dir, 0.0), (x_dir, y_inf), (x_dir, y_sup),
+            (self.ap1 / 2.0 + self.l, 0.0),
+            (self.ap1 / 2.0 + self.l + self.ap2 / 2.0, 0.0),
+        ]
+        if espacamento_maximo is not None:
+            if not math.isfinite(espacamento_maximo) or espacamento_maximo <= 0:
+                raise ValueError('espacamento_maximo deve ser positivo e finito.')
+        self.espacamento_maximo = espacamento_maximo
+        self.nos = [No(i, float(x), float(y))
+                    for i, (x, y) in enumerate(coordenadas, start=1)]
+        self.nos[0].Ty = True
+        self.nos[9].Tx = True
+        self.nos[9].Ty = True
 
         # Definição dos materiais para uma seção de concreto armado
         concreto = Concreto(self.fck, self.αE)
@@ -147,140 +121,60 @@ class Modelo:
         secao3 = Secao("retangular", self.bw, self.h-self.a-self.c, concreto.Ecs, d3, d3_linha)
         secao4 = Secao("retangular", 100.0, 100.0, 100.0*concreto.Ecs, 0.0, 0.0)
 
-        #Definição das barras e propriedades
-        #Ordem dos nós na definição das barras deve ser sempre da esquerda para direita ou de baixo para cima
+        # Trechos de discretização. Cada trecho recebe elementos de
+        # comprimento idêntico, sempre <= espacamento_maximo.
+        # Mantém a orientação das barras: esquerda-direita ou baixo-cima.
+        trechos = [
+            (1, 2, secao1, True, 1),
+            (2, 3, secao1, True, 8),
+            (4, 7, secao2, False, 8),
+            (5, 8, secao3, True, 8),
+            (6, 9, secao1, True, 8),
+            (9, 10, secao1, True, 1),
+            (4, 3, secao4, False, 1),
+            (3, 5, secao4, False, 1),
+            (7, 6, secao4, False, 1),
+            (6, 8, secao4, False, 1),
+        ]
+        self.barras = []
+        self.carregamentos = []
+        for indice_trecho, (ni, nj, secao, carregado, n_original) in enumerate(trechos):
+            no_inicio = self.nos[ni - 1]
+            no_fim = self.nos[nj - 1]
+            comprimento = math.hypot(no_fim.x - no_inicio.x,
+                                     no_fim.y - no_inicio.y)
+            if comprimento <= 0:
+                raise ValueError(f'Trecho {ni}-{nj} com comprimento nulo.')
+            # Os montantes com seção fictícia (secao4) são elementos
+            # de ligação rígida e não devem ser discretizados.
+            # O espaçamento máximo aplica-se somente às barras reais.
+            if secao is secao4:
+                n_elementos = 1
+            elif espacamento_maximo is None:
+                n_elementos = n_original
+            else:
+                n_elementos = max(1, math.ceil(comprimento / espacamento_maximo))
+            nos_trecho = [no_inicio]
+            for k in range(1, n_elementos):
+                t = k / n_elementos
+                no = No(len(self.nos) + 1,
+                        no_inicio.x + t * (no_fim.x - no_inicio.x),
+                        no_inicio.y + t * (no_fim.y - no_inicio.y))
+                self.nos.append(no)
+                nos_trecho.append(no)
+            nos_trecho.append(no_fim)
+            for no_i, no_j in zip(nos_trecho[:-1], nos_trecho[1:]):
+                barra = Barra(len(self.barras) + 1, no_i, no_j,
+                              secao, concreto, aco)
+                barra.ficticia = (secao is secao4)
+                self.barras.append(barra)
+                if carregado:
+                    carga = Carregamento_distribuido(
+                        0.0, barra.L, self.w, self.w, barra)
+                    self.carregamentos.append(carga)
+                    carga.calcula_fepl()
+                    carga.calcula_fep()
 
-        barra1 = Barra(1,no1,no2,secao1,concreto,aco)
-        barra2 = Barra(2,no2,no11,secao1,concreto,aco)
-        barra11 = Barra(11,no11,no12,secao1,concreto,aco)
-        barra12 = Barra(12,no12,no13,secao1,concreto,aco)
-        barra13 = Barra(13,no13,no14,secao1,concreto,aco)
-        barra14 = Barra(14,no14,no15,secao1,concreto,aco)
-        barra15 = Barra(15,no15,no16,secao1,concreto,aco)
-        barra16 = Barra(16,no16,no17,secao1,concreto,aco)
-        barra17 = Barra(17,no17,no3,secao1,concreto,aco)
-        barra3 = Barra(3,no4,no18,secao2,concreto,aco)
-        barra18 = Barra(18,no18,no19,secao2,concreto,aco)
-        barra19 = Barra(19,no19,no20,secao2,concreto,aco)
-        barra20 = Barra(20,no20,no21,secao2,concreto,aco)
-        barra21 = Barra(21,no21,no22,secao2,concreto,aco)
-        barra22 = Barra(22,no22,no23,secao2,concreto,aco)
-        barra23 = Barra(23,no23,no24,secao2,concreto,aco)
-        barra24 = Barra(24,no24,no7,secao2,concreto,aco)
-        barra4 = Barra(4,no5,no25,secao3,concreto,aco)
-        barra25 = Barra(25,no25,no26,secao3,concreto,aco)
-        barra26 = Barra(26,no26,no27,secao3,concreto,aco)
-        barra27 = Barra(27,no27,no28,secao3,concreto,aco)
-        barra28 = Barra(28,no28,no29,secao3,concreto,aco)
-        barra29 = Barra(29,no29,no30,secao3,concreto,aco)
-        barra30 = Barra(30,no30,no31,secao3,concreto,aco)
-        barra31 = Barra(31,no31,no8,secao3,concreto,aco)
-        barra5 = Barra(5,no6,no32,secao1,concreto,aco)
-        barra32 = Barra(32,no32,no33,secao1,concreto,aco)
-        barra33 = Barra(33,no33,no34,secao1,concreto,aco)
-        barra34 = Barra(34,no34,no35,secao1,concreto,aco)
-        barra35 = Barra(35,no35,no36,secao1,concreto,aco)
-        barra36 = Barra(36,no36,no37,secao1,concreto,aco)
-        barra37 = Barra(37,no37,no38,secao1,concreto,aco)
-        barra38 = Barra(38,no38,no9,secao1,concreto,aco)
-        barra6 = Barra(6,no9,no10,secao1,concreto,aco)
-        barra7 = Barra(7,no4,no3,secao4,concreto,aco)
-        barra8 = Barra(8,no3,no5,secao4,concreto,aco)
-        barra9 = Barra(9,no7,no6,secao4,concreto,aco)
-        barra10 = Barra(10,no6,no8,secao4,concreto,aco) 
-        self.barras = [barra1, barra2, barra3, barra4, barra5, barra6, barra7, barra8, barra9, 
-                       barra10, barra11, barra12, barra13, barra14, barra15, barra16, barra17,
-                       barra18, barra19, barra20, barra21, barra22, barra23, barra24, barra25,
-                       barra26, barra27, barra28, barra29, barra30, barra31, barra32, barra33,
-                       barra34, barra35, barra36, barra37, barra38]
-
-        #Definição dos carregamentos nas barras
-
-        carregamento1 = Carregamento_distribuido(0.0,ap1/2,self.w,self.w,barra1)
-        carregamento2 = Carregamento_distribuido(0.0,((self.lf-(self.b/2)-(self.bw/2))/8.0),self.w,self.w,barra2)
-        carregamento6 = Carregamento_distribuido(0.0,((self.lf-(self.b/2)-(self.bw/2))/8.0),self.w,self.w,barra11)
-        carregamento7 = Carregamento_distribuido(0.0,((self.lf-(self.b/2)-(self.bw/2))/8.0),self.w,self.w,barra12)
-        carregamento8 = Carregamento_distribuido(0.0,((self.lf-(self.b/2)-(self.bw/2))/8.0),self.w,self.w,barra13)
-        carregamento9 = Carregamento_distribuido(0.0,((self.lf-(self.b/2)-(self.bw/2))/8.0),self.w,self.w,barra14)
-        carregamento10 = Carregamento_distribuido(0.0,((self.lf-(self.b/2)-(self.bw/2))/8.0),self.w,self.w,barra15)
-        carregamento11 = Carregamento_distribuido(0.0,((self.lf-(self.b/2)-(self.bw/2))/8.0),self.w,self.w,barra16)
-        carregamento12 = Carregamento_distribuido(0.0,((self.lf-(self.b/2)-(self.bw/2))/8.0),self.w,self.w,barra17)
-        carregamento3 = Carregamento_distribuido(0.0,((self.b+self.bw)/8.0),self.w,self.w,barra4)
-        carregamento13 = Carregamento_distribuido(0.0,((self.b+self.bw)/8.0),self.w,self.w,barra25)
-        carregamento14 = Carregamento_distribuido(0.0,((self.b+self.bw)/8.0),self.w,self.w,barra26)
-        carregamento15 = Carregamento_distribuido(0.0,((self.b+self.bw)/8.0),self.w,self.w,barra27)
-        carregamento16 = Carregamento_distribuido(0.0,((self.b+self.bw)/8.0),self.w,self.w,barra28)
-        carregamento17 = Carregamento_distribuido(0.0,((self.b+self.bw)/8.0),self.w,self.w,barra29)
-        carregamento18 = Carregamento_distribuido(0.0,((self.b+self.bw)/8.0),self.w,self.w,barra30)
-        carregamento19 = Carregamento_distribuido(0.0,((self.b+self.bw)/8.0),self.w,self.w,barra31)
-        carregamento4 = Carregamento_distribuido(0.0,((self.l-self.lf-(self.b/2)-(self.bw/2))/8.0),self.w,self.w,barra5)
-        carregamento20 = Carregamento_distribuido(0.0,((self.l-self.lf-(self.b/2)-(self.bw/2))/8.0),self.w,self.w,barra32)
-        carregamento21 = Carregamento_distribuido(0.0,((self.l-self.lf-(self.b/2)-(self.bw/2))/8.0),self.w,self.w,barra33)
-        carregamento22 = Carregamento_distribuido(0.0,((self.l-self.lf-(self.b/2)-(self.bw/2))/8.0),self.w,self.w,barra34)
-        carregamento23 = Carregamento_distribuido(0.0,((self.l-self.lf-(self.b/2)-(self.bw/2))/8.0),self.w,self.w,barra35)
-        carregamento24 = Carregamento_distribuido(0.0,((self.l-self.lf-(self.b/2)-(self.bw/2))/8.0),self.w,self.w,barra36)
-        carregamento25 = Carregamento_distribuido(0.0,((self.l-self.lf-(self.b/2)-(self.bw/2))/8.0),self.w,self.w,barra37)
-        carregamento26 = Carregamento_distribuido(0.0,((self.l-self.lf-(self.b/2)-(self.bw/2))/8.0),self.w,self.w,barra38)
-        carregamento5 = Carregamento_distribuido(0.0,ap2/2,self.w,self.w,barra6)
-
-        # Referências para visualização, sem alterar os cálculos.
-        self.carregamentos = [carregamento1, carregamento2, carregamento3, carregamento4, carregamento5, carregamento6, carregamento7, carregamento8, carregamento9, carregamento10, carregamento11, carregamento12, carregamento13, carregamento14, carregamento15, carregamento16, carregamento17, carregamento18, carregamento19, carregamento20, carregamento21, carregamento22, carregamento23, carregamento24, carregamento25, carregamento26]
-
-        #Calcula as forças de engastamento perfeito
-    
-        carregamento1.calcula_fepl()
-        carregamento1.calcula_fep()
-        carregamento2.calcula_fepl()
-        carregamento2.calcula_fep()
-        carregamento3.calcula_fepl()
-        carregamento3.calcula_fep()
-        carregamento4.calcula_fepl()
-        carregamento4.calcula_fep()
-        carregamento5.calcula_fepl()
-        carregamento5.calcula_fep()
-        carregamento6.calcula_fepl()
-        carregamento6.calcula_fep()
-        carregamento7.calcula_fepl()
-        carregamento7.calcula_fep()
-        carregamento8.calcula_fepl()
-        carregamento8.calcula_fep()
-        carregamento9.calcula_fepl()
-        carregamento9.calcula_fep()
-        carregamento10.calcula_fepl()
-        carregamento10.calcula_fep()
-        carregamento11.calcula_fepl()
-        carregamento11.calcula_fep()
-        carregamento12.calcula_fepl()
-        carregamento12.calcula_fep()
-        carregamento13.calcula_fepl()
-        carregamento13.calcula_fep()
-        carregamento14.calcula_fepl()
-        carregamento14.calcula_fep()
-        carregamento15.calcula_fepl()
-        carregamento15.calcula_fep()
-        carregamento16.calcula_fepl()
-        carregamento16.calcula_fep()
-        carregamento17.calcula_fepl()
-        carregamento17.calcula_fep()
-        carregamento18.calcula_fepl()
-        carregamento18.calcula_fep()
-        carregamento19.calcula_fepl()
-        carregamento19.calcula_fep()
-        carregamento20.calcula_fepl()
-        carregamento20.calcula_fep()
-        carregamento21.calcula_fepl()
-        carregamento21.calcula_fep()
-        carregamento22.calcula_fepl()
-        carregamento22.calcula_fep()
-        carregamento23.calcula_fepl()
-        carregamento23.calcula_fep()
-        carregamento24.calcula_fepl()
-        carregamento24.calcula_fep()
-        carregamento25.calcula_fepl()
-        carregamento25.calcula_fep()
-        carregamento26.calcula_fepl()
-        carregamento26.calcula_fep()
-        
         #Define a estrutura, calcula os resultados de deslocamentos, solicitações internas e reações
     
         portico = Estrutura(self.nos,self.barras)
@@ -307,88 +201,22 @@ class Modelo:
         print_vetor(portico.u)
 
         portico.calcula_solicitacoes_internas_nodais()
-        print("solicitacoes barra1")
-        print_vetor(portico.barras[0].fl)
-        print("solicitacoes barra2")
-        print_vetor(portico.barras[1].fl)
-        print("solicitacoes barra3")
-        print_vetor(portico.barras[2].fl)
-        print("solicitacoes barra4")
-        print_vetor(portico.barras[3].fl)
-        print("solicitacoes barra5")
-        print_vetor(portico.barras[4].fl)
-        print("solicitacoes barra6")
-        print_vetor(portico.barras[5].fl)
-        print("solicitacoes barra7")
-        print_vetor(portico.barras[6].fl)
-        print("solicitacoes barra8")
-        print_vetor(portico.barras[7].fl)
-        print("solicitacoes barra9")
-        print_vetor(portico.barras[8].fl)
-        print("solicitacoes barra10")
-        print_vetor(portico.barras[9].fl)
-        print("solicitacoes barra11")
-        print_vetor(portico.barras[10].fl)
-        print("solicitacoes barra12")
-        print_vetor(portico.barras[11].fl)
-        print("solicitacoes barra13")
-        print_vetor(portico.barras[12].fl)
-        print("solicitacoes barra14")
-        print_vetor(portico.barras[13].fl)
-        print("solicitacoes barra15")
-        print_vetor(portico.barras[14].fl)
-        print("solicitacoes barra16")
-        print_vetor(portico.barras[15].fl)
-        print("solicitacoes barra17")
-        print_vetor(portico.barras[16].fl)
-        print("solicitacoes barra18")
-        print_vetor(portico.barras[17].fl)
-        print("solicitacoes barra19")
-        print_vetor(portico.barras[18].fl)
-        print("solicitacoes barra20")
-        print_vetor(portico.barras[19].fl)
-        print("solicitacoes barra21")
-        print_vetor(portico.barras[20].fl)
-        print("solicitacoes barra22")
-        print_vetor(portico.barras[21].fl)
-        print("solicitacoes barra23")
-        print_vetor(portico.barras[22].fl)
-        print("solicitacoes barra24")
-        print_vetor(portico.barras[23].fl)
-        print("solicitacoes barra25")
-        print_vetor(portico.barras[24].fl)
-        print("solicitacoes barra26")
-        print_vetor(portico.barras[25].fl)
-        print("solicitacoes barra27")
-        print_vetor(portico.barras[26].fl)
-        print("solicitacoes barra28")
-        print_vetor(portico.barras[27].fl)
-        print("solicitacoes barra29")
-        print_vetor(portico.barras[28].fl)
-        print("solicitacoes barra30")
-        print_vetor(portico.barras[29].fl)
-        print("solicitacoes barra31")
-        print_vetor(portico.barras[30].fl)
-        print("solicitacoes barra32")
-        print_vetor(portico.barras[31].fl)
-        print("solicitacoes barra33")
-        print_vetor(portico.barras[32].fl)
-        print("solicitacoes barra34")
-        print_vetor(portico.barras[33].fl)
-        print("solicitacoes barra35")
-        print_vetor(portico.barras[34].fl)
-        print("solicitacoes barra36")
-        print_vetor(portico.barras[35].fl)
-        print("solicitacoes barra37")
-        print_vetor(portico.barras[36].fl)
-        print("solicitacoes barra38")
-        print_vetor(portico.barras[37].fl)
+        for barra in portico.barras:
+            print(f"solicitacoes barra{barra.num}")
+            print_vetor(barra.esforcos_exibicao)
 
         portico.calcula_reacoes()
         print("reacoes")
         print_vetor(portico.R)
 
-        portico.calcula_ASL_barra()
+        # Dimensionamento apenas dos elementos estruturais reais.
+        # Barras fictícias permanecem na análise de rigidez, mas não
+        # recebem armaduras nem entram nos diagramas de dimensionamento.
+        for barra in portico.barras:
+            if barra.ficticia:
+                continue
+            barra.calcula_vetor_ASL()
+            barra.calcula_vetor_ASW_S()
         
         for barra in portico.barras:
             

@@ -1,6 +1,8 @@
                                                          
 import numpy as np
 
+from src import barra
+
 class Estrutura:
     """Representa as propriedades e parâmetros referente ao objeto estrutura."""
 
@@ -108,13 +110,17 @@ class Estrutura:
 
     def calcula_ASL_barra(self) -> None:
         """Calcula as armaduras considerando as solicitações nos extremos da barra."""
-
         for barra in self.barras:
-            if barra.num == 7 or barra.num == 8 or barra.num == 9 or barra.num == 10:
-                pass
-            else:
-                barra.calcula_vetor_ASL()
-                barra.calcula_vetor_ASW_S()
+
+            # Barras fictícias não são dimensionadas.
+            if barra.secao.d <= 0.0:
+                barra.ASL = np.zeros(2)
+                barra.ASL2 = np.zeros(2)
+                barra.ASW_S = np.zeros(2)
+                continue
+
+            barra.calcula_vetor_ASL()
+            barra.calcula_vetor_ASW_S()
 
     def calcula_reacoes(self) -> None:
         """Calcula um vetor com as reações da estrutura."""      
