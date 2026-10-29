@@ -178,37 +178,41 @@ class Visualizacao:
         escala = max(dx, dy, 1.0)
         tam_apoio = 0.018 * escala
 
-        # Camada opcional: um único contorno contínuo para viga e pilares.
-        # A abertura é um furo real do caminho, não um retângulo branco.
+        # Silhueta única da viga e dos pilares, com uma ou várias aberturas.
+        # Compatível com Modelo (abertura única) e ModeloFuros.
         geometria_viga = []
-        parametros = ('ap1', 'ap2', 'l', 'lf', 'b', 'h', 'a', 'c')
-        if all(hasattr(self.modelo, nome) for nome in parametros):
+        m = self.modelo
+        parametros = ('ap1', 'ap2', 'l', 'h')
+        if all(hasattr(m, nome) for nome in parametros):
             from matplotlib.path import Path as MplPath
             from matplotlib.patches import PathPatch
 
-            m = self.modelo
             h = float(m.h)
             ap1, ap2 = float(m.ap1), float(m.ap2)
             x0 = ap1 / 2.0
             x1 = x0 + float(m.l)
             y0, y1 = -h / 2.0, h / 2.0
-            xc = x0 + float(m.lf)
-            xa, xb = xc - float(m.b) / 2.0, xc + float(m.b) / 2.0
-            ya, yb = y0 + float(m.c), y0 + float(m.c) + float(m.a)
+
+            # Os furos têm coordenadas relativas ao início do vão.
+            if hasattr(m, 'furos'):
+                furos = list(m.furos)
+            elif all(hasattr(m, k) for k in ('lf', 'b', 'a', 'c')):
+                furos = [m]
+            else:
+                furos = []
 
             if h > 0 and ap1 > 0 and ap2 > 0 and x1 > x0:
-                # Centros dos pilares coincidem com os nós extremos.
                 apoio_esq = min(nos, key=lambda n: n.x)
                 apoio_dir = max(nos, key=lambda n: n.x)
                 xl = float(apoio_esq.x) - ap1 / 2.0
                 xle = float(apoio_esq.x) + ap1 / 2.0
                 xrd = float(apoio_dir.x) - ap2 / 2.0
                 xr = float(apoio_dir.x) + ap2 / 2.0
-                ye_inf, ye_sup = float(apoio_esq.y) - h, float(apoio_esq.y) + h
-                yd_inf, yd_sup = float(apoio_dir.y) - h, float(apoio_dir.y) + h
+                ye_inf = float(apoio_esq.y) - h
+                ye_sup = float(apoio_esq.y) + h
+                yd_inf = float(apoio_dir.y) - h
+                yd_sup = float(apoio_dir.y) + h
 
-                # Percorre apenas a fronteira EXTERNA da união.
-                # Não há linhas internas separando a viga dos pilares.
                 contorno = [
                     (xl, ye_inf), (xl, ye_sup),
                     (xle, ye_sup), (xle, y1),
@@ -219,15 +223,22 @@ class Visualizacao:
                 ]
 
                 def caminho_fechado(pontos):
-                    vertices = pontos + [pontos[0]]
-                    codigos = ([MplPath.MOVETO]
-                               + [MplPath.LINETO] * (len(pontos) - 1)
-                               + [MplPath.CLOSEPOLY])
-                    return MplPath(vertices, codigos)
+                    return MplPath(
+                        pontos + [pontos[0]],
+                        [MplPath.MOVETO] + [MplPath.LINETO] * (len(pontos)-1)
+                        + [MplPath.CLOSEPOLY]
+                    )
 
                 caminho = caminho_fechado(contorno)
-                if xle < xa < xb < xrd and y0 < ya < yb < y1:
-                    # Sentido inverso ao contorno externo para criar o furo.
+                for furo in furos:
+                    xc = x0 + float(furo.lf)
+                    xa = xc - float(furo.b) / 2.0
+                    xb = xc + float(furo.b) / 2.0
+                    ya = y0 + float(furo.c)
+                    yb = ya + float(furo.a)
+                    if not (xle < xa < xb < xrd and y0 < ya < yb < y1):
+                        continue
+                    # Contorno externo é horário; os vazios são anti-horários.
                     abertura = caminho_fechado([
                         (xa, ya), (xb, ya), (xb, yb), (xa, yb)
                     ])
@@ -967,7 +978,7 @@ class Visualizacao:
         ax.set_xlabel('x (unidade do modelo)')
         ax.set_ylabel('y (unidade do modelo)')
         ax.set_title('Modelo estrutural — geometria e apoios')
-        ax.grid(False, alpha=.18)
+        ax.grid(False)
 
         # Zoom com a roda do mouse, centrado na posição do cursor.
         # Funciona apenas sobre a área do gráfico, não sobre os controles.
