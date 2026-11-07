@@ -1,4 +1,6 @@
+from .cargas import normalizar_cargas, analisar_combinacoes, selecionar_esforcos
 import math
+from .vinculacoes import aplicar_vinculacao, validar_vinculacao
 from .no import No
 from .concreto import Concreto
 from .aco import Aco
@@ -13,7 +15,7 @@ from .visualizacao import print_vetor, print_matriz
 class Modelo:
     """Representa as propriedades e parâmetros referente ao objeto modelo."""
 
-    def __init__(self, bw:float, h:float, l:float, lf:float, a:float, b:float, c:float, ap1:float, ap2:float, w:float, fck:float, fyk:float, fywk:float, modelo:int, α:float = 90.0, θ:float = 30.0, αE:float = 1.0, d:float = None, d_linha:float = None, espacamento_maximo:float = None) -> None:
+    def __init__(self, bw:float, h:float, l:float, lf:float, a:float, b:float, c:float, ap1:float, ap2:float, w:float = None, fck:float = None, fyk:float = None, fywk:float = None, modelo:int = 1, α:float = 90.0, θ:float = 30.0, αE:float = 1.0, cob:float = 3.5, espacamento_maximo:float = None, vinculacao_esquerda:int = 1, vinculacao_direita:int = 2, cargas=None) -> None:
         """
         Instancia um objeto da classe Modelo
 
@@ -22,8 +24,7 @@ class Modelo:
 
             bw: largura viga
             h: altura da viga
-            d: altura útil da armadura tracionada
-            d_linha: altura útil da armadura comprimida 
+            cob: distância da face do concreto ao centroide da armadura longitudinal (cm)
             l: comprimento da viga
             lf: comprimento até centro da abertura
             a: altura da abertura
@@ -39,16 +40,28 @@ class Modelo:
             modelo: modelo de cálculo da armadura transversal (modelo 1 ou modelo 2)
             α: inclinação dos estribos (α deve estar entre 45° e 90°)
             θ: inclinação da biela comprimida de concreto (necessário para modelo 2, θ deve estar entre 30° e 45°)
+            vinculacao_esquerda: classe de apoio esquerdo (1, 2 ou 3).
+            vinculacao_direita: classe de apoio direito (1, 2 ou 3).
             espacamento_maximo: comprimento máximo de cada elemento, em cm.
                 Se None, mantém oito elementos por trecho horizontal principal
                 e um elemento nos demais trechos (malha original).
                 As barras de seção fictícia nunca são subdivididas.
         """
 
+        if any(v is None for v in (fck, fyk, fywk)):
+            raise ValueError("Informe fck, fyk e fywk.")
+        self.vinculacao_esquerda = validar_vinculacao(vinculacao_esquerda)
+        self.vinculacao_direita = validar_vinculacao(vinculacao_direita)
         self.bw = bw
         self.h = h
-        self.d = d
-        self.d_linha = d_linha
+        self.a = a
+        self.b = b
+        self.c = c
+        self.cob = float(cob)
+        if not math.isfinite(self.cob) or self.cob <= 0:
+            raise ValueError("cob deve ser positivo e finito.")
+        if 2 * self.cob >= min(self.h, self.c, self.h - self.a - self.c):
+            raise ValueError("cob incompatível com a altura de alguma seção.")
         self.l = l
         self.lf = lf
         self.a = a
@@ -56,7 +69,10 @@ class Modelo:
         self.c = c
         self.ap1 = ap1
         self.ap2 = ap2
-        self.w = w
+        self.cargas = normalizar_cargas(cargas, w)
+        self.wk = sum(c["w"] for c in self.cargas)
+        self.wd = sum(c["w"] * c["gamaf"] for c in self.cargas)
+        self.w = self.wk  # intensidade característica para visualização
         self.fck = fck
         self.fyk = fyk
         self.fywk = fywk
@@ -94,9 +110,8 @@ class Modelo:
         self.espacamento_maximo = espacamento_maximo
         self.nos = [No(i, float(x), float(y))
                     for i, (x, y) in enumerate(coordenadas, start=1)]
-        self.nos[0].Ty = True
-        self.nos[9].Tx = True
-        self.nos[9].Ty = True
+        aplicar_vinculacao(self.nos[0], self.vinculacao_esquerda)
+        aplicar_vinculacao(self.nos[9], self.vinculacao_direita)
 
         # Definição dos materiais para uma seção de concreto armado
         concreto = Concreto(self.fck, self.αE)
@@ -104,17 +119,15 @@ class Modelo:
 
         # Definição da seção transversal
 
-        d1 = self.h - 3.5
-        d1_linha = 3.5
+        d1 = self.h - self.cob
+        d1_linha = self.cob
 
-        d2 = self.c - 3.5
-        d2_linha = 3.5
+        d2 = self.c - self.cob
+        d2_linha = self.cob
 
-        d3 = self.h-self.a-self.c - 3.5
-        d3_linha = 3.5
+        d3 = self.h-self.a-self.c - self.cob
+        d3_linha = self.cob
 
-        d4 = self.h - 3.5
-        d4_linha = 3.5
 
         secao1 = Secao("retangular", self.bw, self.h, concreto.Ecs, d1, d1_linha)
         secao2 = Secao("retangular", self.bw, self.c, concreto.Ecs, d2, d2_linha)
@@ -168,6 +181,7 @@ class Modelo:
                               secao, concreto, aco)
                 barra.ficticia = (secao is secao4)
                 self.barras.append(barra)
+                barra.carregada = bool(carregado)
                 if carregado:
                     carga = Carregamento_distribuido(
                         0.0, barra.L, self.w, self.w, barra)
@@ -175,64 +189,14 @@ class Modelo:
                     carga.calcula_fepl()
                     carga.calcula_fep()
 
-        #Define a estrutura, calcula os resultados de deslocamentos, solicitações internas e reações
-    
-        portico = Estrutura(self.nos,self.barras)
-        self.portico = portico
-        
-        portico.monta_k()
-        print("k")
-        print_matriz(portico.k)
+        self.portico = Estrutura(self.nos, self.barras)
+        self.portico.monta_k()
+        self.portico.monta_k01()
+        analisar_combinacoes(self)
 
-        portico.monta_k01()
-        print("k01")
-        print_matriz(portico.k01)
-
-        portico.monta_fnos()
-        print("fnos")
-        print_vetor(portico.fnos)
-
-        portico.aplica_cc_fnos()
-        print("f01")
-        print_vetor(portico.fnos)
-
-        portico.calcula_deslocamentos()
-        print("deslocamentos")
-        print_vetor(portico.u)
-
-        portico.calcula_solicitacoes_internas_nodais()
-        for barra in portico.barras:
-            print(f"solicitacoes barra{barra.num}")
-            print_vetor(barra.esforcos_exibicao)
-
-        portico.calcula_reacoes()
-        print("reacoes")
-        print_vetor(portico.R)
-
-        # Dimensionamento apenas dos elementos estruturais reais.
-        # Barras fictícias permanecem na análise de rigidez, mas não
-        # recebem armaduras nem entram nos diagramas de dimensionamento.
-        for barra in portico.barras:
-            if barra.ficticia:
-                continue
-            barra.calcula_vetor_ASL()
-            barra.calcula_vetor_ASW_S()
-        
-        for barra in portico.barras:
-            
-            print("Asl barra" + str(barra.num))
-            print_vetor(barra.ASL)
-
-        for barra in self.barras:
-                    
-            print("comprimento barra" + str(barra.num))
-            print(barra.L) 
-
-        for no in self.nos:
-            
-            print("no" + str(no.num))
-            print(no.x)
-            print(no.y)
+    def selecionar_esforcos(self, tipo="calculo"):
+        """Seleciona os resultados característicos ou majorados."""
+        selecionar_esforcos(self, tipo)
 
     def desenha_area_armaduras(self) -> None:
         """Desenha gráfico com resultados de áreas de armaduras por nó da estrutura."""

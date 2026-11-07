@@ -166,7 +166,7 @@ class Barra:
         θ = math.radians(self.θ)
 
         # Definindo o coeficiente majorador de esforços
-        γf = 1.4
+        γf = getattr(self, "gamaf", 1.4)
 
         # Guardando as solicitações (M, N) dos nós extremos da barra
         M = np.array([self.fl[2], self.fl[5]])
@@ -217,7 +217,7 @@ class Barra:
         """Calcula vetor x, vetor ASL e ASL2 para a barra."""
 
         # Definindo o coeficiente majorador de esforços
-        γf = 1.4
+        γf = getattr(self, "gamaf", 1.4)
 
         # Guardando as solicitações (M, N) dos nós extremos da barra
         M = np.array([self.fl[2], self.fl[5]])

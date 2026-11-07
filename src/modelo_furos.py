@@ -1,3 +1,4 @@
+from .cargas import normalizar_cargas, analisar_combinacoes, selecionar_esforcos
 """Modelo de viga com múltiplas aberturas retangulares.
 
 Mantém a formulação de pórtico plano, os banzos e as ligações rígidas
@@ -5,6 +6,7 @@ fictícias do modelo de abertura única.
 """
 import math
 from .furo import Furo
+from .vinculacoes import aplicar_vinculacao, validar_vinculacao
 from .no import No
 from .concreto import Concreto
 from .aco import Aco
@@ -18,14 +20,25 @@ from .visualizacao import print_vetor, print_matriz
 class ModeloFuros:
     """Viga com zero, uma ou várias aberturas; dimensões em cm."""
 
-    def __init__(self, bw, h, l, furos, ap1, ap2, w, fck, fyk, fywk,
-                 modelo, α=90.0, θ=30.0, αE=1.0, d=None, d_linha=None,
-                 espacamento_maximo=20.0, imprimir_resultados=False):
+    def __init__(self, bw, h, l, furos, ap1, ap2, w=None, fck=None, fyk=None, fywk=None,
+                 modelo=1, α=90.0, θ=30.0, αE=1.0, cob=3.5,
+                 espacamento_maximo=20.0, imprimir_resultados=False,
+                 vinculacao_esquerda=1, vinculacao_direita=2, cargas=None):
+        if any(v is None for v in (fck, fyk, fywk)):
+            raise ValueError("Informe fck, fyk e fywk.")
+        self.vinculacao_esquerda = validar_vinculacao(vinculacao_esquerda)
+        self.vinculacao_direita = validar_vinculacao(vinculacao_direita)
         self.bw, self.h, self.l = float(bw), float(h), float(l)
-        self.ap1, self.ap2, self.w = float(ap1), float(ap2), float(w)
+        self.ap1, self.ap2 = float(ap1), float(ap2)
+        self.cargas = normalizar_cargas(cargas, w)
+        self.wk = sum(c["w"] for c in self.cargas)
+        self.wd = sum(c["w"] * c["gamaf"] for c in self.cargas)
+        self.w = self.wk  # intensidade característica para visualização
         self.fck, self.fyk, self.fywk = fck, fyk, fywk
         self.modelo, self.α, self.θ, self.αE = modelo, α, θ, αE
-        self.d, self.d_linha = d, d_linha
+        self.cob = float(cob)
+        if not math.isfinite(self.cob) or self.cob <= 0:
+            raise ValueError("cob deve ser positivo e finito.")
         self.espacamento_maximo = espacamento_maximo
         self.furos = sorted(list(furos) if furos is not None else [],
                             key=lambda f: f.lf)
@@ -50,8 +63,10 @@ class ModeloFuros:
         concreto = Concreto(self.fck, self.αE)
         aco = Aco(self.fyk, self.fywk)
         def secao(altura):
+            if 2 * self.cob >= altura:
+                raise ValueError(f"cob={self.cob} cm incompatível com seção de altura {altura} cm.")
             return Secao('retangular', self.bw, altura, concreto.Ecs,
-                         altura - 3.5, 3.5)
+                         altura - self.cob, self.cob)
         secao_cheia = secao(self.h)
         secao_rigida = Secao('retangular', 100.0, 100.0,
                              100.0 * concreto.Ecs, 0.0, 0.0)
@@ -78,6 +93,7 @@ class ModeloFuros:
                 barra = Barra(len(self.barras) + 1, inicio, fim, sec, concreto, aco)
                 barra.ficticia = ficticia
                 self.barras.append(barra)
+                barra.carregada = bool(carregado)
                 if carregado:
                     carga = Carregamento_distribuido(0.0, barra.L,
                                                      self.w, self.w, barra)
@@ -86,7 +102,7 @@ class ModeloFuros:
                     carga.calcula_fep()
 
         apoio_esq = no(0.0, 0.0)
-        apoio_esq.Ty = True
+        aplicar_vinculacao(apoio_esq, self.vinculacao_esquerda)
         inicio_viga = no(self.ap1 / 2.0, 0.0)
         trecho(apoio_esq, inicio_viga, secao_cheia, carregado=True)
         atual = inicio_viga
@@ -114,8 +130,7 @@ class ModeloFuros:
             atual = direita
         fim_viga = no(self.ap1 / 2.0 + self.l, 0.0)
         apoio_dir = no(self.ap1 / 2.0 + self.l + self.ap2 / 2.0, 0.0)
-        apoio_dir.Tx = True
-        apoio_dir.Ty = True
+        aplicar_vinculacao(apoio_dir, self.vinculacao_direita)
         trecho(atual, fim_viga, secao_cheia, carregado=True)
         trecho(fim_viga, apoio_dir, secao_cheia, carregado=True)
 
@@ -123,20 +138,16 @@ class ModeloFuros:
         p = self.portico
         p.monta_k()
         p.monta_k01()
-        p.monta_fnos()
-        p.aplica_cc_fnos()
-        p.calcula_deslocamentos()
-        p.calcula_solicitacoes_internas_nodais()
-        p.calcula_reacoes()
-        for barra in self.barras:
-            if not barra.ficticia:
-                barra.calcula_vetor_ASL()
-                barra.calcula_vetor_ASW_S()
+        analisar_combinacoes(self)
         if imprimir_resultados:
-            print('Deslocamentos:')
+            print("Deslocamentos (combinação de cálculo):")
             print_vetor(p.u)
-            print('Reações:')
+            print("Reações (cálculo):")
             print_vetor(p.R)
+
+    def selecionar_esforcos(self, tipo="calculo"):
+        """Seleciona os resultados característicos ou majorados."""
+        selecionar_esforcos(self, tipo)
 
     def visualizar(self, **kwargs):
         """Visualização de barras/diagramas (geometria de múltiplos furos requer adaptação)."""

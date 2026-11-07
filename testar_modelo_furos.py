@@ -9,6 +9,12 @@ furos = [
     Furo(lf=800, b=80, a=35, c=20),
 ]
 
+cargas = [
+    {"nome": "Peso próprio", "w": 0.15, "gamaf": 1.40},
+    {"nome": "Revestimento", "w": 0.15, "gamaf": 1.40},
+    {"nome": "Sobrecarga", "w": 0.15, "gamaf": 1.50},
+]
+
 modelo = ModeloFuros(
     bw=30.0,
     h=80.0,
@@ -16,12 +22,15 @@ modelo = ModeloFuros(
     furos=furos,
     ap1=40.0,
     ap2=40.0,
-    w=0.45,
+    cargas=cargas,
     fck=35.0,
     fyk=500.0,
     fywk=500.0,
     modelo=1,
-    espacamento_maximo=20.0
+    cob=3.5,
+    espacamento_maximo=20.0,
+    vinculacao_esquerda=1,
+    vinculacao_direita=3
 )
 
 visualizacao = Visualizacao(modelo)

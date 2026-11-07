@@ -155,11 +155,12 @@ class Visualizacao:
         return x, M
 
     def desenhar_geometria(self, mostrar_nos=False, mostrar_barras=False,
-                       mostrar_apoios=True, ax=None, controles=True):
+                       mostrar_apoios=True, ax=None, controles=True,
+                       estados_iniciais=None, escalas_iniciais=None):
         import matplotlib.pyplot as plt
         import numpy as np
         from matplotlib.patches import Polygon, Rectangle, Circle
-        from matplotlib.widgets import CheckButtons, Button, Slider
+        from matplotlib.widgets import CheckButtons, Button, Slider, RadioButtons
 
         nos, barras = self.modelo.nos, self.modelo.barras
         if not nos or not barras:
@@ -285,10 +286,30 @@ class Visualizacao:
             if not (tx or ty or rz):
                 continue
             artistas = []
-            if tx and ty and rz:  # engaste
-                artistas.append(Rectangle((no.x-tam_apoio/2, no.y-tam_apoio),
-                                          tam_apoio, tam_apoio, facecolor='#999999',
-                                          edgecolor='black', zorder=6))
+            if tx and ty and rz:  # engaste: linha vertical hachurada (opção 3)
+                # A hachura fica do lado externo do vão, tanto à esquerda
+                # quanto à direita. Todas as linhas pertencem ao grupo Apoios.
+                centro_x = (xmin + xmax) / 2.0
+                lado_externo = -1 if no.x <= centro_x else 1
+                meia_altura = 1.5 * tam_apoio
+                linha, = ax.plot(
+                    [no.x, no.x],
+                    [no.y - meia_altura, no.y + meia_altura],
+                    color='black', linewidth=2.2, zorder=6,
+                    solid_capstyle='butt'
+                )
+                artistas.append(linha)
+                n_hachuras = 8
+                passo = 2 * meia_altura / (n_hachuras + 1)
+                for i in range(1, n_hachuras + 1):
+                    y0 = no.y - meia_altura + i * passo
+                    # Traços diagonais apenas para fora da viga.
+                    traco, = ax.plot(
+                        [no.x, no.x + lado_externo * 0.55 * tam_apoio],
+                        [y0, y0 - 0.55 * passo],
+                        color='black', linewidth=1.1, zorder=6
+                    )
+                    artistas.append(traco)
             elif tx and ty:  # apoio articulado
                 artistas.append(Polygon([(no.x, no.y),
                                           (no.x-tam_apoio, no.y-tam_apoio),
@@ -318,8 +339,12 @@ class Visualizacao:
                                             no.y-tam_apoio*.25),
                                            tam_apoio*.5, tam_apoio*.5,
                                            fill=False, edgecolor='#555555', zorder=6))
+            # Linhas do engaste já foram adicionadas por ax.plot().
+            # Os demais símbolos são patches e precisam de ax.add_patch().
+            from matplotlib.patches import Patch
             for artista in artistas:
-                ax.add_patch(artista)
+                if isinstance(artista, Patch):
+                    ax.add_patch(artista)
             grupos['Apoios'].extend(artistas)
 
         # Cargas distribuídas: Py local, positivo no eixo y local da barra.
@@ -1088,6 +1113,10 @@ class Visualizacao:
             'Armadura transversal': False,
             'Valores': False,
         }
+        # Ao reconstruir a figura, preserva os estados sem acionar callbacks.
+        if estados_iniciais is not None:
+            estados.update({chave: bool(valor) for chave, valor in
+                            estados_iniciais.items() if chave in estados})
         grupos['Deformada'] = linhas_deformada
         # Inicialização: artistas não controlados diretamente ficam ocultos.
         for nome, artistas in grupos.items():
@@ -1200,6 +1229,11 @@ class Visualizacao:
                 fig.canvas.draw_idle()
 
             checks.on_clicked(alternar)
+            # Os artistas de rótulos são criados ocultos. Ao reconstruir a
+            # figura após trocar a combinação de esforços, restaura também
+            # sua visibilidade conforme os checkboxes preservados, sem
+            # precisar clicar novamente em "Valores".
+            atualizar_valores()
             area_reset = fig.add_axes([.80, .265, .17, .055])
             reset = Button(area_reset, 'Restaurar vista')
 
@@ -1211,6 +1245,60 @@ class Visualizacao:
             reset.on_clicked(restaurar)
 
             self._controles = [checks, reset]
+
+            # Seletor disponível somente para modelos calculados nas duas
+            # combinações (opção 2). Os detalhamentos permanecem de ELU.
+            if (hasattr(self.modelo, 'resultados_caracteristicos')
+                    and hasattr(self.modelo, 'resultados_calculo')
+                    and callable(getattr(self.modelo, 'selecionar_esforcos', None))):
+                # Posiciona o seletor no canto superior direito da área
+                # de plotagem, sem sobrepor os controles de escala laterais.
+                area_tipo = ax.inset_axes([.785, .815, .205, .145],
+                                         transform=ax.transAxes, zorder=20)
+                area_tipo.set_facecolor((1, 1, 1, 0.92))
+                area_tipo.set_title('Esforços exibidos', fontsize=9, loc='left')
+                rotulos_tipo = ['Característicos', 'Majorados']
+                tipo_atual = getattr(self.modelo, 'tipo_esforcos', 'calculo')
+                seletor = RadioButtons(area_tipo, rotulos_tipo,
+                                       active=0 if tipo_atual == 'caracteristicos' else 1)
+                for spine in area_tipo.spines.values():
+                    spine.set_visible(False)
+
+                def trocar_tipo(rotulo):
+                    novo_tipo = ('caracteristicos' if rotulo == 'Característicos'
+                                 else 'calculo')
+                    if novo_tipo == getattr(self.modelo, 'tipo_esforcos', 'calculo'):
+                        return
+                    # Reconstrói os diagramas: os artistas anteriores contêm
+                    # valores numéricos calculados na criação da figura.
+                    # Captura os estados internos, incluindo nomes de grupos
+                    # diferentes dos rótulos apresentados nos checkboxes.
+                    estados_anteriores = estados.copy()
+                    escalas_anteriores = {
+                        controle.label.get_text(): controle.val
+                        for controle in self._controles
+                        if isinstance(controle, Slider)
+                    }
+                    limites_atuais = (ax.get_xlim(), ax.get_ylim())
+                    self.modelo.selecionar_esforcos(novo_tipo)
+                    if hasattr(self, '_zoom_scroll_cid'):
+                        fig.canvas.mpl_disconnect(self._zoom_scroll_cid)
+                    for controle_antigo in self._controles:
+                        if hasattr(controle_antigo, 'disconnect_events'):
+                            controle_antigo.disconnect_events()
+                    fig.clear()
+                    novo_ax = fig.add_subplot(111)
+                    self.desenhar_geometria(
+                        ax=novo_ax, controles=True,
+                        estados_iniciais=estados_anteriores,
+                        escalas_iniciais=escalas_anteriores,
+                    )
+                    novo_ax.set_xlim(*limites_atuais[0])
+                    novo_ax.set_ylim(*limites_atuais[1])
+                    fig.canvas.draw_idle()
+
+                seletor.on_clicked(trocar_tipo)
+                self._controles.append(seletor)
 
             area_escala_m = fig.add_axes([.82, .215, .14, .020])
             slider_m = Slider(area_escala_m, 'M', 0.0, 5.0,
@@ -1299,6 +1387,16 @@ class Visualizacao:
                     family="monospace"
                 )
 
+            # Reaplica as escalas selecionadas pelo usuário após recriar
+            # os artistas. Não altera os estados dos checkboxes.
+            if escalas_iniciais:
+                for controle in self._controles:
+                    if isinstance(controle, Slider):
+                        rotulo = controle.label.get_text()
+                        if rotulo in escalas_iniciais:
+                            valor = float(escalas_iniciais[rotulo])
+                            if controle.valmin <= valor <= controle.valmax:
+                                controle.set_val(valor)
 
         return fig, ax
 
