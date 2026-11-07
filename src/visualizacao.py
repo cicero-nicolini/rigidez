@@ -251,13 +251,14 @@ class Visualizacao:
                 ax.add_patch(bloco)
                 geometria_viga.append(bloco)
 
-        grupos = {'Nós': [], 'Números dos nós': [], 'Números das barras': [],
+        grupos = {'Modelo estrutural': [], 'Nós': [], 'Números dos nós': [], 'Números das barras': [],
                   'Apoios': [], 'Cargas distribuídas': [], 'Forças nodais': [], 'Momentos nodais': []}
 
         for barra in barras:
             xi, yi = barra.noi.x, barra.noi.y
             xj, yj = barra.noj.x, barra.noj.y
-            ax.plot([xi, xj], [yi, yj], color='#2866a6', lw=2.1, zorder=2)
+            linha_modelo, = ax.plot([xi, xj], [yi, yj], color='#2866a6', lw=2.1, zorder=2)
+            grupos['Modelo estrutural'].append(linha_modelo)
             # Deslocamento perpendicular à barra em pontos de tela.
             vx, vy = xj - xi, yj - yi
             comprimento = (vx * vx + vy * vy) ** 0.5
@@ -940,12 +941,136 @@ class Visualizacao:
 
 
 
+        # Detalhamento longitudinal: cores individuais e legenda fixa na área de desenho.
+        grupos['Detalhamento longitudinal'] = []
+        if hasattr(m, 'ap1') and hasattr(m, 'l') and hasattr(m, 'h'):
+            from .armaduras_longitudinais import propor_longitudinais
+            from .armaduras_banzos import propor_banzos
+
+            propostas = propor_longitudinais(m)
+            propostas_banzos = propor_banzos(m)
+            todas = [*propostas, *propostas_banzos]
+            # Paleta discreta, com distinção suficiente entre as posições.
+            cores = ('#c0392b', '#21618c', '#148f77', '#8e44ad',
+                     '#b9770e', '#af145b', '#2874a6', '#6c7a21',
+                     '#7d3c98', '#a04000', '#117864', '#566573')
+            cores_por_posicao = {p.posicao: cores[i % len(cores)]
+                                 for i, p in enumerate(todas)}
+            cobrimento_esquematico = min(3.5, float(m.h) * 0.15)
+            for proposta in propostas:
+                y_arm = ((-float(m.h) / 2 + cobrimento_esquematico)
+                         if proposta.face == 'inferior'
+                         else (float(m.h) / 2 - cobrimento_esquematico))
+                cor = cores_por_posicao[proposta.posicao]
+                linha, = ax.plot(
+                    [proposta.inicio_cm, proposta.fim_cm], [y_arm, y_arm],
+                    color=cor, lw=2.6, zorder=12, visible=False)
+                rotulo = ax.annotate(
+                    proposta.posicao,
+                    ((proposta.inicio_cm + proposta.fim_cm) / 2, y_arm),
+                    xytext=(0, -12 if proposta.face == 'inferior' else 9),
+                    textcoords='offset points', ha='center', fontsize=9,
+                    weight='bold', color=cor, visible=False, zorder=16,
+                    bbox=dict(facecolor='white', edgecolor='none', alpha=.78, pad=.5))
+                grupos['Detalhamento longitudinal'].extend((linha, rotulo))
+            self.armaduras_longitudinais = propostas
+
+            # As armaduras das faces externas dos banzos recebem um afastamento
+            # apenas gráfico em relação às barras contínuas N1 e N2.
+            afastamento_visual = max(3.0, min(5.0, float(m.h) * 0.07))
+            for proposta in propostas_banzos:
+                y_arm = proposta.y_cm
+                if proposta.banzo == 'inferior' and proposta.face == 'inferior':
+                    y_arm += afastamento_visual
+                elif proposta.banzo == 'superior' and proposta.face == 'superior':
+                    y_arm -= afastamento_visual
+                cor = cores_por_posicao[proposta.posicao]
+                linha, = ax.plot(
+                    [proposta.inicio_cm, proposta.fim_cm], [y_arm, y_arm],
+                    color=cor, lw=2.6, zorder=14, visible=False)
+                # Rótulos alternados acima/abaixo das barras para reduzir colisões.
+                deslocamento = 10 if proposta.face == 'superior' else -13
+                rotulo = ax.annotate(
+                    proposta.posicao,
+                    ((proposta.inicio_cm + proposta.fim_cm) / 2, y_arm),
+                    xytext=(0, deslocamento), textcoords='offset points',
+                    ha='center', fontsize=8, weight='bold', color=cor,
+                    visible=False, zorder=16,
+                    bbox=dict(facecolor='white', edgecolor='none', alpha=.85, pad=.5))
+                grupos['Detalhamento longitudinal'].extend((linha, rotulo))
+            self.armaduras_banzos = propostas_banzos
+
+            # Relação de ferros dentro do gráfico, no canto inferior esquerdo.
+            # Coordenadas do eixo tornam a posição independente do zoom/pan.
+            for i, proposta in enumerate(todas):
+                texto = (f'{proposta.posicao}  {proposta.quantidade} '
+                         f'Ø{proposta.bitola_mm:g}  '
+                         f'C={proposta.comprimento_geometrico_cm:g} cm '
+                         f'(As={proposta.as_fornecida_cm2:.2f} cm²)')
+                anot = ax.annotate(
+                    texto, xy=(0.018, 0.035), xycoords='axes fraction',
+                    xytext=(0, 12 * (len(todas) - 1 - i)),
+                    textcoords='offset points', ha='left', va='bottom',
+                    color=cores_por_posicao[proposta.posicao],
+                    fontsize=8, family='monospace', weight='bold',
+                    bbox=dict(facecolor='white', edgecolor='none', alpha=.88, pad=1.0),
+                    visible=False, zorder=30, annotation_clip=False)
+                grupos['Detalhamento longitudinal'].append(anot)
+
+        # Estribos em seção cheia e nos banzos, com relação à direita.
+        grupos['Detalhamento transversal'] = []
+        if hasattr(m, 'ap1') and hasattr(m, 'l') and (hasattr(m, 'furos') or hasattr(m, 'lf')):
+            from .armaduras_transversais import propor_transversais
+            from .armaduras_estribos_banzos import propor_estribos_banzos
+            propostas_estribos = propor_transversais(m)
+            propostas_banzos_estribos = propor_estribos_banzos(
+                m, primeira_posicao=len(propostas_estribos) + 1)
+            todos_estribos = [*propostas_estribos, *propostas_banzos_estribos]
+            h = float(m.h)
+            cobrimento = min(3.5, h * 0.15)
+            topo, base = h / 2 - cobrimento, -h / 2 + cobrimento
+            cores_estribos = ('#8050a0', '#b05b20', '#167f76', '#b03267',
+                              '#4169a2', '#737c18', '#a04a36', '#6b55a8')
+            for i, proposta in enumerate(todos_estribos):
+                cor = cores_estribos[i % len(cores_estribos)]
+                if hasattr(proposta, 'y_inferior_cm'):
+                    ybaixo, yalto = proposta.y_inferior_cm, proposta.y_superior_cm
+                else:
+                    ybaixo, yalto = base, topo
+                xs = np.linspace(proposta.inicio_cm, proposta.fim_cm,
+                                 proposta.quantidade)
+                for x in xs:
+                    linha, = ax.plot([x, x], [ybaixo, yalto], color=cor,
+                                     lw=.85, zorder=11, visible=False)
+                    grupos['Detalhamento transversal'].append(linha)
+                centro = (proposta.inicio_cm + proposta.fim_cm) / 2
+                rotulo = ax.annotate(
+                    proposta.posicao, (centro, (ybaixo + yalto) / 2),
+                    ha='center', va='center', fontsize=8, weight='bold',
+                    color=cor, zorder=17, visible=False,
+                    bbox=dict(facecolor='white', edgecolor='none', alpha=.88, pad=1))
+                grupos['Detalhamento transversal'].append(rotulo)
+                anot = ax.annotate(
+                    (f'{proposta.posicao} Ø{proposta.bitola_mm:g} '
+                     f'c/{proposta.espacamento_cm:g} '
+                     f'(Asws={proposta.asw_fornecida_cm2_m:.2f} cm²/m)'),
+                    xy=(.982, .035), xycoords='axes fraction',
+                    xytext=(0, 12 * (len(todos_estribos) - 1 - i)),
+                    textcoords='offset points', ha='right', va='bottom',
+                    color=cor, fontsize=8, family='monospace', weight='bold',
+                    bbox=dict(facecolor='white', edgecolor='none', alpha=.9, pad=1),
+                    visible=False, zorder=30, annotation_clip=False)
+                grupos['Detalhamento transversal'].append(anot)
+            self.armaduras_transversais = propostas_estribos
+            self.armaduras_estribos_banzos = propostas_banzos_estribos
+
         grupos['Geometria da viga'] = geometria_viga
 
         # Os rótulos numéricos são controlados por uma única opção "Valores".
         # As coleções de artistas continuam separadas internamente.
         estados = {
             'Geometria da viga': False,
+            'Modelo estrutural': True,
             'Nós': True,
             'Números dos nós': mostrar_nos,
             'Números das barras': mostrar_barras,
@@ -958,6 +1083,8 @@ class Visualizacao:
             'Esforço normal': False,
             'Esforço cortante': False,
             'Armadura longitudinal': False,
+            'Detalhamento longitudinal': False,
+            'Detalhamento transversal': False,
             'Armadura transversal': False,
             'Valores': False,
         }
@@ -1014,13 +1141,20 @@ class Visualizacao:
             area = fig.add_axes([.79, .34, .20, .63])
             area.set_title('Exibir', fontsize=10, loc='left')
             nomes = [
-                'Geometria da viga', 'Nós', 'Números dos nós',
+                'Geometria da viga', 'Modelo estrutural', 'Nós', 'Números dos nós',
                 'Números das barras', 'Apoios', 'Cargas distribuídas',
                 'Forças nodais', 'Momentos nodais', 'Deformada',
                 'Momento fletor', 'Esforço Normal', 'Esforço cortante',
+                'Diagrama As longitudinal', 'Diagrama As transversal',
                 'Armadura longitudinal', 'Armadura transversal', 'Valores',
             ]
-            nome_interno = {'Esforço Normal': 'Esforço normal'}
+            nome_interno = {
+                'Esforço Normal': 'Esforço normal',
+                'Diagrama As longitudinal': 'Armadura longitudinal',
+                'Diagrama As transversal': 'Armadura transversal',
+                'Armadura longitudinal': 'Detalhamento longitudinal',
+                'Armadura transversal': 'Detalhamento transversal',
+            }
             # Ícones quadrados de 12 pt (Matplotlib >= 3.7).
             # O parâmetro `s` corresponde à área em pontos quadrados.
             checks = CheckButtons(
