@@ -436,6 +436,42 @@ def continuidade_nos_furos(modelo, faixas, tolerancia=1e-5):
                 unidos.append(atual)
                 atual = f
         unidos.append(atual)
+    # Nas aberturas, evitar porta-estribos duplicados na mesma face.
+    # A escolha considera a bitola do estribo do banzo correspondente.
+    from .armaduras_estribos_banzos import propor_estribos_banzos
+    estribos_banzos = propor_estribos_banzos(modelo)
+    bitolas_minimas = {
+        (e.indice_furo, 'N1' if e.banzo == 'inferior' else 'N2'):
+        float(e.bitola_mm) for e in estribos_banzos
+    }
+    for indice, xa, xb, _, _ in zonas:
+        for posicao in ('N1', 'N2'):
+            candidatos = [f for f in unidos
+                          if f.posicao == posicao and f.nivel == -1
+                          and f.inicio_cm <= xa + tolerancia
+                          and f.fim_cm >= xb - tolerancia]
+            if len(candidatos) < 2:
+                continue
+            minimo = bitolas_minimas.get((indice, posicao), 0.0)
+            elegiveis = [f for f in candidatos
+                         if f.bitola_mm + tolerancia >= minimo]
+            if not elegiveis:
+                # Sem bitola adequada, não eliminar barras sem substituição.
+                continue
+            escolhido = max(elegiveis,
+                            key=lambda f: (f.bitola_mm, f.quantidade))
+            novos = []
+            for f in unidos:
+                if f not in candidatos or f is escolhido:
+                    novos.append(f)
+                    continue
+                # Preserva as partes necessárias fora do furo.
+                if f.inicio_cm < xa - tolerancia:
+                    novos.append(replace(f, fim_cm=xa))
+                if f.fim_cm > xb + tolerancia:
+                    novos.append(replace(f, inicio_cm=xb))
+            unidos = novos
+
     areas = {}
     for indice, xa, xb, _, _ in zonas:
         areas[indice] = {}

@@ -1431,33 +1431,71 @@ class Visualizacao:
                         f'c = {proposta_b.comprimento_geometrico_cm:.0f} cm '
                         f'(As = {proposta_b.as_fornecida_cm2:.2f} cm²)'
                         if proposta_b is not None else '')
-                # Reserva N1 e N2 para as barras de base. As faixas
-                # escalonadas recebem posições exclusivas, sem conflitar
-                # com as posições já utilizadas pelas armaduras dos banzos.
+                # A continuidade nos furos preserva a origem N1/N2, mas
+                # pode produzir barras fisicamente distintas (bitola, número,
+                # comprimento ou nível). Cada tipo recebe posição própria.
+                # N1/N2 ficam reservadas às barras resistentes de base.
                 posicoes_ocupadas = {
                     proposta.posicao for proposta in novos_banzos
                 } | {'N1', 'N2'}
                 proximo_numero = 3
+                identificacoes = {}
+                principais = {}
+
+                # Identifica primeiro as barras resistentes de base, evitando
+                # que porta-estribos de outra bitola sejam chamados de N1/N2.
+                for faixa_base in faixas:
+                    if faixa_base.nivel != 0:
+                        continue
+                    origem = faixa_base.posicao
+                    if origem not in principais:
+                        principais[origem] = (
+                            origem, faixa_base.face, faixa_base.quantidade,
+                            round(float(faixa_base.bitola_mm), 6),
+                            faixa_base.nivel,
+                            round(float(faixa_base.fim_cm - faixa_base.inicio_cm), 4),
+                        )
 
                 def posicao_da_faixa(faixa):
-                    """Define a identificação gráfica exclusiva de cada faixa."""
+                    """Numera tipos distintos sem modificar o aço calculado."""
                     nonlocal proximo_numero
 
-                    if faixa.nivel in (-1, 0):
-                        return faixa.posicao
+                    chave = (
+                        faixa.posicao, faixa.face, faixa.quantidade,
+                        round(float(faixa.bitola_mm), 6), faixa.nivel,
+                        round(float(faixa.fim_cm - faixa.inicio_cm), 4),
+                    )
+                    if chave in identificacoes:
+                        return identificacoes[chave]
 
-                    while f'N{proximo_numero}' in posicoes_ocupadas:
+                    if chave == principais.get(faixa.posicao):
+                        posicao = faixa.posicao
+                    else:
+                        while f'N{proximo_numero}' in posicoes_ocupadas:
+                            proximo_numero += 1
+                        posicao = f'N{proximo_numero}'
                         proximo_numero += 1
+                        posicoes_ocupadas.add(posicao)
 
-                    posicao = f'N{proximo_numero}'
-                    posicoes_ocupadas.add(posicao)
-                    proximo_numero += 1
+                    identificacoes[chave] = posicao
                     return posicao
 
+                # Define pistas por posição efetiva, e não apenas pelo nível
+                # teórico. Duas bitolas diferentes no mesmo nível precisam
+                # aparecer em alturas distintas para permitir sua leitura.
+                # Faixas da mesma posição compartilham a pista, inclusive
+                # quando ocupam intervalos descontínuos da viga.
+                pistas_por_face = {'inferior': {}, 'superior': {}}
+                faixas_identificadas = []
                 for faixa in faixas:
-                    posicao_grafica = posicao_da_faixa(faixa)
-                    # Pista 0: construtiva. Pistas seguintes: níveis resistentes.
-                    indice_pista = 0 if faixa.nivel == -1 else max(0, faixa.nivel) + 1
+                    posicao = posicao_da_faixa(faixa)
+                    faixas_identificadas.append((faixa, posicao))
+                    pistas = pistas_por_face[faixa.face]
+                    if posicao not in pistas:
+                        pistas[posicao] = len(pistas)
+
+                for faixa, posicao_grafica in faixas_identificadas:
+                    indice_pista = pistas_por_face[faixa.face][posicao_grafica]
                     y_arm = y_faixa(faixa.face, indice_pista)
                     cor = cores_por_posicao.get(
                         faixa.posicao, '#566573'
