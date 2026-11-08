@@ -1862,6 +1862,23 @@ class Visualizacao:
                     for artista in grupos[info['nome_valores']]:
                         artista.set_visible(ativo)
 
+            # Associa cada diagrama ao eixo do seu controle de escala.
+            # Os eixos são criados adiante, mas o callback já pode consultar
+            # este dicionário quando o usuário alternar um checkbox.
+            eixos_escalas = {}
+            controles_escalonamento = []
+
+            def atualizar_visibilidade_escalas():
+                """Mostra apenas as escalas dos diagramas habilitados."""
+                for nome_diagrama, eixo_escala in eixos_escalas.items():
+                    eixo_escala.set_visible(bool(estados[nome_diagrama]))
+
+            def atualizar_visibilidade_escalonamento():
+                """Mostra os controles N1/N2 apenas com a armadura longitudinal."""
+                visivel = bool(estados['Detalhamento longitudinal'])
+                for artista in controles_escalonamento:
+                    artista.set_visible(visivel)
+
             def alternar(rotulo):
                 nome = nome_interno.get(rotulo, rotulo)
                 estados[nome] = not estados[nome]
@@ -1876,6 +1893,8 @@ class Visualizacao:
                         and estados['Cargas distribuídas']):
                     checks.set_active(nomes.index('Cargas distribuídas'))
                 atualizar_valores()
+                atualizar_visibilidade_escalas()
+                atualizar_visibilidade_escalonamento()
                 fig.canvas.draw_idle()
 
             checks.on_clicked(alternar)
@@ -1926,7 +1945,7 @@ class Visualizacao:
                     valinit=self.niveis_n2, valstep=1, valfmt='%d',
                 )
 
-                ax.text(
+                titulo_escalonamento = ax.text(
                     .015, .985, 'Escalonamento N1 / N2',
                     transform=ax.transAxes, ha='left', va='top',
                     fontsize=9, fontweight='bold', zorder=22,
@@ -1950,9 +1969,12 @@ class Visualizacao:
                 controle_n1.on_changed(alterar_escalonamento)
                 controle_n2.on_changed(alterar_escalonamento)
                 self._controles.extend((controle_n1, controle_n2))
+                controles_escalonamento.extend((area_n1, area_n2, titulo_escalonamento))
+                atualizar_visibilidade_escalonamento()
 
             if mostrar_controles_escala:
                 area_escala_m = fig.add_axes([.82, .215, .14, .020])
+                eixos_escalas['Momento fletor'] = area_escala_m
                 slider_m = Slider(area_escala_m, 'M', 0.0, 5.0,
                                   valinit=1.0, valfmt='%.2f')
                 slider_m.on_changed(lambda fator: atualizar_momento(escala_momento * fator))
@@ -1964,6 +1986,7 @@ class Visualizacao:
                 ):
                     info = diagramas_nv[tipo]
                     area_nv = fig.add_axes([.82, y_slider, .14, .020])
+                    eixos_escalas[tipo] = area_nv
                     controle_nv = Slider(
                         area_nv, sigla, 0.0,
                         5.0,
@@ -1984,6 +2007,7 @@ class Visualizacao:
                 ):
                     info = diagramas_armadura[titulo]
                     area_arm = fig.add_axes([.82, y_slider, .14, .014])
+                    eixos_escalas[titulo] = area_arm
                     controle_arm = Slider(
                         area_arm, sigla, 0.0,
                         5.0,
@@ -2001,6 +2025,7 @@ class Visualizacao:
                         0.82, 0.019, 0.14, 0.014
                     ])
 
+                    eixos_escalas['Deformada'] = area_slider
                     slider = Slider(
                         ax=area_slider,
                         label="Def.",
@@ -2038,6 +2063,10 @@ class Visualizacao:
                         va="bottom",
                         family="monospace"
                     )
+
+            # Respeita os estados iniciais dos checkboxes, inclusive quando
+            # nenhum diagrama estiver selecionado.
+            atualizar_visibilidade_escalas()
 
             # Reaplica as escalas selecionadas pelo usuário após recriar
             # os artistas. Não altera os estados dos checkboxes.
