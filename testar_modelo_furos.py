@@ -19,7 +19,7 @@ modelo = ModeloFuros(
     bw=30.0,
     h=80.0,
     l=1100.0,
-    furos=furos,
+    furos=[],
     ap1=40.0,
     ap2=40.0,
     cargas=cargas,
@@ -47,6 +47,8 @@ visualizacao.desenhar_geometria(
     mostrar_momentos_nodais=False,
     mostrar_deformada=False,
     mostrar_momento=True,
+    mostrar_diagrama_decalado=True,
+    decalagem_automatica=True,
     mostrar_normal=False,
     mostrar_cortante=False,
     mostrar_diagrama_as_longitudinal=False,
@@ -56,6 +58,7 @@ visualizacao.desenhar_geometria(
     mostrar_valores=True,
     mostrar_escalas=True,
     controles=True
+    
 )
 
 plt.show()

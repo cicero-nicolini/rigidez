@@ -1,7 +1,7 @@
 """Escalonamento TEÓRICO independente das armaduras N1 e N2.
 
-Não calcula ancoragens, decalagem, comprimentos de corte ou detalhamento
-normativo. Mantém a bitola e a quantidade total propostas pela rotina original.
+Não calcula ancoragens nem comprimentos de corte ou detalhamento
+normativo. Permite decalagem geométrica parametrizada da demanda. Mantém a bitola e a quantidade total propostas pela rotina original.
 Unidades: cm, cm². Resultados majorados devem estar selecionados no modelo.
 """
 from dataclasses import dataclass
@@ -75,6 +75,35 @@ def _intervalos_acima(segmentos, face_idx, limiar, x0, x1):
     return intervalos
 
 
+def _decalar_intervalos(intervalos, a, b, decalagem_cm):
+    """Amplia e une faixas de demanda dentro de uma região de seção cheia.
+
+    Args:
+        intervalos: Intervalos teóricos (início, fim) em centímetros.
+        a: Limite esquerdo da região, em centímetros.
+        b: Limite direito da região, em centímetros.
+        decalagem_cm: Distância de decalagem horizontal em centímetros.
+
+    Returns:
+        Lista ordenada de intervalos decalados, sem sobreposição.
+
+    Notes:
+        Não incorpora comprimento de ancoragem. A ampliação é bilateral,
+        representando a envoltória de demanda deslocada em ±a_l.
+    """
+    resultado = []
+    for inicio, fim in sorted(intervalos):
+        esquerda = max(a, inicio - decalagem_cm)
+        direita = min(b, fim + decalagem_cm)
+        if direita - esquerda <= 1e-8:
+            continue
+        if resultado and esquerda <= resultado[-1][1] + 1e-6:
+            resultado[-1] = (resultado[-1][0], max(direita, resultado[-1][1]))
+        else:
+            resultado.append((esquerda, direita))
+    return resultado
+
+
 def _subtrair(intervalo, ocupados):
     """Partes de intervalo sem demanda resistente."""
     partes = [intervalo]
@@ -89,19 +118,67 @@ def _subtrair(intervalo, ocupados):
     return partes
 
 
+def distancia_decalagem(barra, automatica=True, manual_cm=None):
+    """Distância geométrica a_l (cm) compartilhada por diagrama e armaduras.
+
+    Usa d, modelo de cortante e inclinações armazenadas na barra.
+    Esta aproximação geométrica ainda requer conferência normativa.
+    """
+    from math import radians, tan
+
+    if manual_cm is not None:
+        valor = float(manual_cm)
+        if not isfinite(valor) or valor < 0:
+            raise ValueError('decalagem_cm deve ser finita e não negativa.')
+        return valor
+    if not automatica:
+        return 0.0
+    d = float(getattr(barra.secao, 'd', 0.0))
+    theta = 45.0 if getattr(barra, 'modelo', 1) == 1 else float(barra.θ)
+    alfa = float(getattr(barra, 'α', 90.0))
+    if not all(isfinite(v) for v in (d, theta, alfa)):
+        return 0.0
+    if d <= 0 or not (0 < theta < 90 and 0 < alfa <= 90):
+        return 0.0
+    return max(0.0, d * (1 / tan(radians(theta)) -
+                         1 / tan(radians(alfa))) / 2)
+
+
+def _decalagem_trecho(modelo, a, b, automatica, manual_cm):
+    """Maior a_l das barras de seção cheia pertencentes ao trecho."""
+    distancias = []
+    for barra in modelo.barras:
+        if getattr(barra, 'ficticia', False):
+            continue
+        noi, noj = barra.noi, barra.noj
+        xa, xb = sorted((float(noi.x), float(noj.x)))
+        if (abs(float(noi.y)) > 1e-6 or abs(float(noj.y)) > 1e-6
+                or xb - xa < 1e-8 or xa < a - 1e-6 or xb > b + 1e-6):
+            continue
+        distancias.append(distancia_decalagem(barra, automatica, manual_cm))
+    return max(distancias, default=0.0)
+
+
 def propor_escalonamento(modelo, niveis_n1=2, niveis_n2=2,
-                          barras_base_n1=2, barras_base_n2=2):
+                          barras_base_n1=2, barras_base_n2=2, decalagem_cm=None,
+                          decalagem_automatica=True):
     """Escalonamento teórico por face em trechos cheios.
 
     Onde As requerida é zero, propõe 2 porta-estribos com bitola igual
     à dos estribos da seção cheia correspondente. Não verifica ancoragem,
     continuidade física nem comprimentos executivos.
+
+    Args:
+        decalagem_cm: Ampliação bilateral da envoltória de demanda, em cm.
+            Valor 0 mantém o comportamento anterior. Não inclui ancoragem.
     """
     from .armaduras_transversais import propor_transversais
 
     for nome, valor in (('niveis_n1', niveis_n1), ('niveis_n2', niveis_n2)):
         if type(valor) is not int or valor < 0:
             raise ValueError(f'{nome} deve ser inteiro não negativo.')
+    if decalagem_cm is not None:
+        decalagem_cm = distancia_decalagem(None, manual_cm=decalagem_cm)
     originais = propor_longitudinais(modelo)
     estribos = propor_transversais(modelo)
     x0, x1 = float(modelo.ap1)/2, float(modelo.ap1)/2+float(modelo.l)
@@ -117,8 +194,12 @@ def propor_escalonamento(modelo, niveis_n1=2, niveis_n2=2,
         area_barra = pi * (original.bitola_mm/10)**2/4
         for trecho in estribos:
             a, b = trecho.inicio_cm, trecho.fim_cm
+            decalagem_trecho = _decalagem_trecho(
+                modelo, a, b, decalagem_automatica, decalagem_cm)
             locais = [seg for seg in segmentos if seg[0] >= a-1e-6 and seg[1] <= b+1e-6]
-            positivos = _intervalos_acima(locais, face_idx, 1e-9, a, b)
+            positivos = _decalar_intervalos(
+                _intervalos_acima(locais, face_idx, 1e-9, a, b),
+                a, b, decalagem_trecho)
             # Porta-estribos são propostos apenas onde As da face é nula.
             for ini, fim in _subtrair((a, b), positivos):
                 saida.append(FaixaEscalonada(original.posicao, original.face,
@@ -142,8 +223,10 @@ def propor_escalonamento(modelo, niveis_n1=2, niveis_n2=2,
                         for i in range(grupos)]
             acumulado = base
             for nivel, tamanho in enumerate(tamanhos, 1):
-                for ini, fim in _intervalos_acima(locais, face_idx,
-                                                   acumulado*area_barra, a, b):
+                for ini, fim in _decalar_intervalos(
+                        _intervalos_acima(locais, face_idx,
+                                          acumulado*area_barra, a, b),
+                        a, b, decalagem_trecho):
                     saida.append(FaixaEscalonada(original.posicao, original.face,
                                  tamanho, original.bitola_mm, ini, fim, nivel))
                 acumulado += tamanho

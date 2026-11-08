@@ -65,6 +65,8 @@ class Visualizacao:
         self.niveis_n1 = 0
         self.niveis_n2 = 0
         self.armaduras_escalonadas = []
+        self.decalagem_cm = 0.0  # Decalagem geométrica da demanda (cm).
+        self._decalagem_manual = False
 
     @staticmethod
     def _trechos_geometricos(barras):
@@ -217,7 +219,9 @@ class Visualizacao:
                        mostrar_diagrama_as_longitudinal=None,
                        mostrar_diagrama_as_transversal=None,
                        mostrar_armadura_longitudinal=None,
-                       mostrar_armadura_transversal=None):
+                       mostrar_armadura_transversal=None,
+                       decalagem_cm=None, mostrar_diagrama_decalado=None,
+                       decalagem_automatica=True):
         """
             Desenha a estrutura e configura os controles interativos.
 
@@ -256,6 +260,9 @@ class Visualizacao:
                 mostrar_diagrama_as_transversal: Exibe o diagrama de Asw/s.
                 mostrar_armadura_longitudinal: Exibe o detalhamento longitudinal.
                 mostrar_armadura_transversal: Exibe o detalhamento transversal.
+                mostrar_diagrama_decalado: Exibe a envoltória decaladada.
+                decalagem_automatica: Estima a decalagem pelas inclinações
+                    de bielas e estribos; decalagem_cm tem prioridade.
 
                 Os parâmetros de visibilidade com valor None preservam o
                 estado padrão, ou o estado restaurado da figura.
@@ -270,6 +277,13 @@ class Visualizacao:
             Raises:
                 ValueError: Se o modelo não contiver nós ou barras.
         """
+        if decalagem_cm is not None:
+            from math import isfinite
+            if not isfinite(float(decalagem_cm)) or float(decalagem_cm) < 0:
+                raise ValueError('decalagem_cm deve ser finita e não negativa.')
+            self.decalagem_cm = float(decalagem_cm)
+            self._decalagem_manual = True
+
 
         import matplotlib.pyplot as plt
         import numpy as np
@@ -696,6 +710,51 @@ class Visualizacao:
                 extremos.extend([(float(M[0]), barra.num, 'i'),
                                  (float(M[-1]), barra.num, 'j')])
 
+        # Envoltória decaladada de M: para cada x, busca os maiores valores
+        # positivos e negativos no intervalo [x-a_l, x+a_l]. A envoltória
+        # é calculada por região contínua, sem atravessar lacunas da malha.
+        # Esta visualização não substitui a verificação normativa da decalagem.
+        from .escalonamento_n1_n2 import distancia_decalagem
+
+        def decalagem_barra(barra):
+            return distancia_decalagem(
+                barra, automatica=decalagem_automatica,
+                manual_cm=(self.decalagem_cm if self._decalagem_manual else None))
+
+        dados_decalados = []
+        # Amostragem por alinhamento (mesma ordenada da viga), para não
+        # misturar diagramas de banzos e montantes de aberturas.
+        for barra, xi, yi, c, s, x_local, M in dados_momento:
+            if getattr(barra, 'ficticia', False) or abs(s) > 1e-7:
+                dados_decalados.append((np.array(M), np.array(M)))
+                continue
+            a_l = decalagem_barra(barra)
+            xs = xi + c * x_local
+            candidatos = []
+            for outra, xj, yj, cj, sj, localj, mj in dados_momento:
+                if (getattr(outra, 'ficticia', False) or abs(sj) > 1e-7
+                        or abs(yj-yi) > 1e-5):
+                    continue
+                xx = xj + cj * localj
+                ordem = np.argsort(xx)
+                candidatos.append((xx[ordem], np.asarray(mj)[ordem]))
+            positivos, negativos = [], []
+            for x in xs:
+                valores = []
+                for xx, mm in candidatos:
+                    esquerda = max(float(xx[0]), float(x-a_l))
+                    direita = min(float(xx[-1]), float(x+a_l))
+                    if direita < esquerda - 1e-8:
+                        continue
+                    interior = mm[(xx >= esquerda) & (xx <= direita)]
+                    valores.extend(interior.tolist())
+                    valores.extend(np.interp([esquerda, direita], xx, mm).tolist())
+                if not valores:
+                    valores = [float(np.interp(x, xs, M))]
+                positivos.append(max(0.0, max(valores)))
+                negativos.append(min(0.0, min(valores)))
+            dados_decalados.append((np.array(positivos), np.array(negativos)))
+
         Mmax = max((np.max(np.abs(d[6])) for d in dados_momento), default=0.0)
         escala_momento = 0.06 * escala / Mmax if Mmax > 1e-12 else 1.0
         objetos_momento = []
@@ -705,7 +764,9 @@ class Visualizacao:
         minimo_global = extremos_ordenados[0] if extremos_ordenados else None
         maximo_global = extremos_ordenados[-1] if extremos_ordenados else None
 
-        for barra, xi, yi, c, s, x_local, M in dados_momento:
+        objetos_decalados = []
+        artistas_decalados = []
+        for indice, (barra, xi, yi, c, s, x_local, M) in enumerate(dados_momento):
             x_base = xi + c*x_local
             y_base = yi + s*x_local
             linha, = ax.plot([], [], color='#16803c', lw=1.8,
@@ -716,6 +777,14 @@ class Visualizacao:
             artistas_momento.extend((linha, preenchimento))
             objetos_momento.append((linha, preenchimento,
                                      x_base, y_base, c, s, M))
+            if not getattr(barra, 'ficticia', False) and abs(s) < 1e-7:
+                for envoltoria in dados_decalados[indice]:
+                    linha_dec, = ax.plot([], [], color='#d97706', lw=1.5,
+                                         linestyle=(0, (4, 3)), zorder=9,
+                                         visible=False)
+                    artistas_decalados.append(linha_dec)
+                    objetos_decalados.append((linha_dec, x_base, y_base,
+                                              c, s, envoltoria))
 
         trechos = self._trechos_geometricos(barras)
         momentos_por_barra = {id(b): (float(m[0]), float(m[-1]))
@@ -755,6 +824,9 @@ class Visualizacao:
                 linha.set_data(xd, yd)
                 preenchimento.set_xy(np.column_stack((
                     np.r_[xb, xd[::-1]], np.r_[yb, yd[::-1]])))
+            for linha, xb, yb, c, s, envoltoria in objetos_decalados:
+                linha.set_data(xb + s*fator*envoltoria,
+                               yb - c*fator*envoltoria)
             for anot, xb, yb, c, s, valor in (
                     etiquetas_momento + etiquetas_extremos):
                 anot.xy = (xb + s*fator*valor, yb - c*fator*valor)
@@ -762,6 +834,7 @@ class Visualizacao:
 
         atualizar_momento(escala_momento)
         grupos['Momento fletor'] = artistas_momento
+        grupos['Diagrama decalado'] = artistas_decalados
         grupos['Valores dos momentos'] = [item[0] for item in etiquetas_momento]
         grupos['Extremos do momento'] = [item[0] for item in etiquetas_extremos]
 
@@ -1133,7 +1206,10 @@ class Visualizacao:
                         grupos['Detalhamento longitudinal'].remove(artista)
                 artistas_n1_n2.clear()
                 faixas = propor_escalonamento(
-                    m, niveis_n1=self.niveis_n1, niveis_n2=self.niveis_n2)
+                    m, niveis_n1=self.niveis_n1, niveis_n2=self.niveis_n2,
+                    decalagem_cm=(self.decalagem_cm if self._decalagem_manual
+                                  else None),
+                    decalagem_automatica=decalagem_automatica)
                 faixas, areas_continuas = continuidade_nos_furos(m, faixas)
                 self.armaduras_escalonadas = faixas
                 # Redimensiona apenas os complementos dos banzos externos,
@@ -1342,6 +1418,7 @@ class Visualizacao:
             'Momentos nodais': True,
             'Deformada': False,
             'Momento fletor': False,
+            'Diagrama decalado': False,
             'Esforço normal': False,
             'Esforço cortante': False,
             'Armadura longitudinal': False,
@@ -1396,6 +1473,7 @@ class Visualizacao:
             # Resultados da análise estrutural.
             'Deformada': mostrar_deformada,
             'Momento fletor': mostrar_momento,
+            'Diagrama decalado': mostrar_diagrama_decalado,
             'Esforço normal': mostrar_normal,
             'Esforço cortante': mostrar_cortante,
 
@@ -1480,7 +1558,8 @@ class Visualizacao:
                 'Geometria da viga', 'Modelo estrutural', 'Nós', 'Números dos nós',
                 'Números das barras', 'Apoios', 'Cargas distribuídas',
                 'Forças nodais', 'Momentos nodais', 'Deformada',
-                'Momento fletor', 'Esforço Normal', 'Esforço cortante',
+                'Momento fletor', 'Diagrama decalado',
+                'Esforço Normal', 'Esforço cortante',
                 'Diagrama As longitudinal', 'Diagrama As transversal',
                 'Armadura longitudinal', 'Armadura transversal', 'Valores',
             ]
@@ -1521,7 +1600,8 @@ class Visualizacao:
                     for artista in grupos[nome]:
                         artista.set_visible(estados[nome])
                 # Ao ativar diagramas, oculta as cargas para evitar sobreposição.
-                if (nome in ('Momento fletor', 'Esforço normal',
+                if (nome in ('Momento fletor', 'Diagrama decalado',
+                             'Esforço normal',
                              'Esforço cortante', 'Armadura longitudinal',
                              'Armadura transversal') and estados[nome]
                         and estados['Cargas distribuídas']):
@@ -1648,6 +1728,7 @@ class Visualizacao:
                         estados_iniciais=estados_anteriores,
                         escalas_iniciais=escalas_anteriores,
                         mostrar_controles_escala=mostrar_controles_escala,
+                        decalagem_automatica=decalagem_automatica,
                     )
                     novo_ax.set_xlim(*limites_atuais[0])
                     novo_ax.set_ylim(*limites_atuais[1])
