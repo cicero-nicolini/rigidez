@@ -1,5 +1,7 @@
 """Visualização de modelos de pórtico plano com Matplotlib."""
 
+SIMBOLO_BITOLA = "\u00D8"  # Ø: símbolo único para bitolas em toda a interface.
+
 # Funções legadas preservadas para compatibilidade com os cálculos.
 def print_matriz(m) -> None:
     """
@@ -286,6 +288,7 @@ class Visualizacao:
                        mostrar_armadura_transversal=None,
                        decalagem_cm=None, mostrar_diagrama_decalado=None,
                        decalagem_automatica=True, ancoragem_automatica=False,
+                       ancoragem_apoios=True,
                        boa_aderencia=True):
         """
             Desenha a estrutura e configura os controles interativos.
@@ -328,6 +331,8 @@ class Visualizacao:
                 mostrar_diagrama_decalado: Exibe a envoltória decaladada.
                 decalagem_automatica: Estima a decalagem pelas inclinações
                     de bielas e estribos; decalagem_cm tem prioridade.
+                ancoragem_apoios: Avalia ancoragem reta nas regiões dos apoios;
+                    registra insuficiências geométricas sem presumir atendimento.
                 ancoragem_automatica: Acrescenta comprimento necessário l_b,nec de
                     ancoragem às faixas N1/N2 após a decalagem.
                 boa_aderencia: Condição de aderência adotada para as barras.
@@ -1251,6 +1256,8 @@ class Visualizacao:
                     m, propostas_banzos, boa_aderencia=boa_aderencia)
             limite_x_esquerdo = float(m.ap1) / 2.0
             limite_x_direito = limite_x_esquerdo + float(m.l)
+            # Ancoragem de apoio é aplicada às faixas após a continuidade;
+            # propostas de banzo são tratadas mais adiante na atualização.
             propostas_banzos = _modular_armaduras(
                 propostas_banzos, limite_x_esquerdo, limite_x_direito)
             artistas_banzos = []
@@ -1274,6 +1281,7 @@ class Visualizacao:
 
             # Os artistas de N1/N2 são atualizados sem alterar os banzos.
             artistas_n1_n2 = []
+            artistas_alertas_apoios = []
 
             def atualizar_faixas_n1_n2():
                 from .escalonamento_n1_n2 import propor_escalonamento, continuidade_nos_furos
@@ -1282,6 +1290,11 @@ class Visualizacao:
                     if artista in grupos['Detalhamento longitudinal']:
                         grupos['Detalhamento longitudinal'].remove(artista)
                 artistas_n1_n2.clear()
+                for artista in artistas_alertas_apoios:
+                    artista.remove()
+                    if artista in grupos['Detalhamento longitudinal']:
+                        grupos['Detalhamento longitudinal'].remove(artista)
+                artistas_alertas_apoios.clear()
                 faixas = propor_escalonamento(
                     m, niveis_n1=self.niveis_n1, niveis_n2=self.niveis_n2,
                     decalagem_cm=(self.decalagem_cm if self._decalagem_manual
@@ -1290,8 +1303,29 @@ class Visualizacao:
                     ancoragem_automatica=ancoragem_automatica,
                     boa_aderencia=boa_aderencia)
                 faixas, areas_continuas = continuidade_nos_furos(m, faixas)
+                if ancoragem_automatica and ancoragem_apoios:
+                    from .ancoragem_apoios import ancorar_nos_apoios
+                    faixas, self.diagnosticos_ancoragem_apoios = ancorar_nos_apoios(
+                        m, faixas, boa_aderencia=boa_aderencia)
+                else:
+                    self.diagnosticos_ancoragem_apoios = []
+                # Permite prolongamento até as faces externas dos apoios.
+                # Se a modulação não couber, a rotina sinaliza insuficiência.
+                # As barras retas podem entrar nos apoios, mas devem respeitar
+                # o cobrimento na face externa de cada pilar.
+                cobrimento_apoio = float(getattr(m, 'cob', 0.0))
+                # O vão l é livre entre faces internas dos pilares.
+                # A ancoragem parte dessas faces, não dos nós centrais.
+                limite_mod_esq = (limite_x_esquerdo - float(m.ap1)
+                                  + cobrimento_apoio
+                                  if ancoragem_automatica and ancoragem_apoios
+                                  else limite_x_esquerdo)
+                limite_mod_dir = (limite_x_direito + float(m.ap2)
+                                  - cobrimento_apoio
+                                  if ancoragem_automatica and ancoragem_apoios
+                                  else limite_x_direito)
                 faixas = _modular_armaduras(
-                    faixas, limite_x_esquerdo, limite_x_direito)
+                    faixas, limite_mod_esq, limite_mod_dir)
                 self.armaduras_escalonadas = faixas
                 # Redimensiona apenas os complementos dos banzos externos,
                 # descontando a armadura N1/N2 que atravessa cada furo.
@@ -1306,9 +1340,68 @@ class Visualizacao:
                     if artista in grupos['Detalhamento longitudinal']:
                         grupos['Detalhamento longitudinal'].remove(artista)
                 artistas_banzos.clear()
+                if ancoragem_automatica and ancoragem_apoios:
+                    novos_banzos, diagnosticos_banzos_apoios = ancorar_nos_apoios(
+                        m, novos_banzos, boa_aderencia=boa_aderencia)
+                    self.diagnosticos_ancoragem_apoios.extend(diagnosticos_banzos_apoios)
                 novos_banzos = _modular_armaduras(
-                    novos_banzos, limite_x_esquerdo, limite_x_direito)
+                    novos_banzos, limite_mod_esq, limite_mod_dir)
                 self.armaduras_banzos = novos_banzos
+
+                # Diagnóstico explícito: a rotina anterior apenas armazenava
+                # resultados, sem apresentar avisos no terminal ou no gráfico.
+                if ancoragem_automatica and ancoragem_apoios:
+                    from .ancoragem_apoios import relatorio_ancoragem_apoios
+                    relatorio_ancoragem_apoios(self.diagnosticos_ancoragem_apoios)
+                    avisos = [d for d in self.diagnosticos_ancoragem_apoios
+                              if not d.atendida_geometricamente]
+                    # Marcadores e diagnósticos são recalculados a cada
+                    # alteração dos controles de escalonamento.
+                    import math
+                    for d in avisos:
+                        g = getattr(d, 'gancho_90', None)
+                        if g is None:
+                            continue
+                        x_apoio = (limite_x_esquerdo if d.lado == 'esquerdo'
+                                   else limite_x_direito)
+                        y_apoio = (float(m.h) / 2.0 + 12.0
+                                   if d.face == 'superior'
+                                   else -float(m.h) / 2.0 - 12.0)
+                        deficit_gancho = max(0.0,
+                            float(d.lb_gancho_cm) - float(d.comprimento_disponivel_cm))
+                        if deficit_gancho > 1e-4:
+                            marcador, = ax.plot(
+                                [x_apoio], [y_apoio], marker='x', markersize=10,
+                                markeredgewidth=2.5, linestyle='None',
+                                color='red', zorder=32, visible=False)
+                            texto = ax.annotate(
+                                f'! {d.posicao}: gancho — faltam {deficit_gancho:.1f} cm',
+                                (x_apoio, y_apoio), xytext=(6, 7),
+                                textcoords='offset points', fontsize=8,
+                                color='red', weight='bold', zorder=33,
+                                visible=False)
+                            artistas_alertas_apoios.extend((marcador, texto))
+                            grupos['Detalhamento longitudinal'].extend((marcador, texto))
+                    # Alertas de insuficiência sem gancho viável.
+                    for d in avisos:
+                        if getattr(d, 'gancho_90', None) is not None:
+                            continue
+                        x_apoio = (limite_x_esquerdo if d.lado == 'esquerdo'
+                                   else limite_x_direito)
+                        y_apoio = (float(m.h) / 2.0 + 12.0
+                                   if d.face == 'superior'
+                                   else -float(m.h) / 2.0 - 12.0)
+                        deficit = max(0.0, d.lb_necessario_cm - d.comprimento_disponivel_cm)
+                        marcador, = ax.plot([x_apoio], [y_apoio], marker='x',
+                            markersize=10, markeredgewidth=2.5,
+                            linestyle='None', color='red', zorder=32, visible=False)
+                        texto = ax.annotate(
+                            f'! {d.posicao}: falta {deficit:.1f} cm',
+                            (x_apoio, y_apoio), xytext=(6, 7),
+                            textcoords='offset points', fontsize=8,
+                            color='red', weight='bold', zorder=33, visible=False)
+                        artistas_alertas_apoios.extend((marcador, texto))
+                        grupos['Detalhamento longitudinal'].extend((marcador, texto))
                 for proposta_b in novos_banzos:
                     # Armaduras dos banzos permanecem na posição original,
                     # junto à abertura, independentemente das pistas N1/N2.
@@ -1334,7 +1427,7 @@ class Visualizacao:
                 for pos, anot in anotacoes_banzos.items():
                     proposta_b = next((b for b in novos_banzos if b.posicao == pos), None)
                     anot.set_text(
-                        f'{proposta_b.quantidade} {pos} phi {proposta_b.bitola_mm:g} '
+                        f'{proposta_b.quantidade} {pos} {SIMBOLO_BITOLA}{proposta_b.bitola_mm:g} '
                         f'c = {proposta_b.comprimento_geometrico_cm:.0f} cm '
                         f'(As = {proposta_b.as_fornecida_cm2:.2f} cm²)'
                         if proposta_b is not None else '')
@@ -1369,13 +1462,64 @@ class Visualizacao:
                     cor = cores_por_posicao.get(
                         faixa.posicao, '#566573'
                     )
-                    linha, = ax.plot(
-                        [faixa.inicio_cm, faixa.fim_cm], [y_arm, y_arm],
-                        color=cor, lw=2.6, zorder=12,
-                        visible=False)
+                    # Desenho da própria barra na pista externa, incluindo
+                    # a dobra e a ponta vertical, sem ganchos desconectados.
+                    gancho_esq = None
+                    gancho_dir = None
+                    for diagnostico in self.diagnosticos_ancoragem_apoios:
+                        if (diagnostico.posicao == faixa.posicao
+                                and diagnostico.face == faixa.face
+                                and diagnostico.gancho_90 is not None):
+                            g = diagnostico.gancho_90
+                            extremidade = (faixa.inicio_cm if diagnostico.lado == 'esquerdo'
+                                           else faixa.fim_cm)
+                            if abs(extremidade - g.x_vertical_cm) <= 6.0:
+                                if diagnostico.lado == 'esquerdo':
+                                    gancho_esq = g
+                                else:
+                                    gancho_dir = g
+                    # A extremidade horizontal coincide com a tangência da
+                    # curva. Nunca desenhar a linha até x_vertical, pois isso
+                    # cria uma pequena ponta reta além do início do gancho.
+                    x_reto_esq = (gancho_esq.x_tangencia_cm if gancho_esq is not None
+                                  else faixa.inicio_cm)
+                    x_reto_dir = (gancho_dir.x_tangencia_cm if gancho_dir is not None
+                                  else faixa.fim_cm)
+
+                    def pontos_gancho(g, lado):
+                        """Pontos da curva do eixo da barra, da tangência à ponta."""
+                        sentido_x = -1.0 if lado == 'esquerdo' else 1.0
+                        angulos = [math.pi * i / 40 for i in range(21)]
+                        curva_x = [g.x_tangencia_cm + sentido_x * g.raio_eixo_cm * math.sin(a)
+                                   for a in angulos]
+                        curva_y = [y_arm + g.sentido_vertical * g.raio_eixo_cm * (1 - math.cos(a))
+                                   for a in angulos]
+                        return curva_x, curva_y
+
+                    pontos_x = [x_reto_esq, x_reto_dir]
+                    pontos_y = [y_arm, y_arm]
+                    if gancho_esq is not None:
+                        gx, gy = pontos_gancho(gancho_esq, 'esquerdo')
+                        pontos_x = [gancho_esq.x_vertical_cm, *reversed(gx), x_reto_dir]
+                        pontos_y = [gy[-1] + gancho_esq.sentido_vertical * gancho_esq.ponta_vertical_cm,
+                                    *reversed(gy), y_arm]
+                    if gancho_dir is not None:
+                        gx, gy = pontos_gancho(gancho_dir, 'direito')
+                        # gx[0] é exatamente a extremidade do trecho reto.
+                        pontos_x.extend(gx[1:])
+                        pontos_y.extend(gy[1:])
+                        pontos_x.append(gancho_dir.x_vertical_cm)
+                        pontos_y.append(gy[-1] + gancho_dir.sentido_vertical * gancho_dir.ponta_vertical_cm)
+                    linha, = ax.plot(pontos_x, pontos_y,
+                        color=cor, lw=2.6, zorder=12, visible=False)
+                    comprimento_corte = x_reto_dir - x_reto_esq
+                    for g in (gancho_esq, gancho_dir):
+                        if g is not None:
+                            comprimento_corte += math.pi * g.raio_eixo_cm / 2 + g.ponta_vertical_cm
+                    comprimento_corte = 5 * math.ceil((comprimento_corte - 1e-9) / 5)
                     rotulo = ax.annotate(
-                        f'{faixa.quantidade} {posicao_grafica} Ø{faixa.bitola_mm:g} '
-                        f'C={faixa.fim_cm - faixa.inicio_cm:.0f} cm',
+                        f'{faixa.quantidade} {posicao_grafica} {SIMBOLO_BITOLA}{faixa.bitola_mm:g} '
+                        f'C={comprimento_corte:.0f} cm',
                         ((faixa.inicio_cm + faixa.fim_cm) / 2, y_arm),
                         xytext=(0, 10),
                         textcoords='offset points', ha='center', va='bottom', fontsize=8,
@@ -1392,7 +1536,7 @@ class Visualizacao:
             # As faixas externas já exibem posição, quantidade, bitola e comprimento.
             for i, proposta in enumerate(propostas_banzos):
                 texto = (f'{proposta.quantidade} {proposta.posicao} '
-                         f'phi {proposta.bitola_mm:g} '
+                         f'{SIMBOLO_BITOLA}{proposta.bitola_mm:g} '
                          f'c = {proposta.comprimento_geometrico_cm:.0f} cm '
                          f'(As = {proposta.as_fornecida_cm2:.2f} cm²)')
                 anot = ax.annotate(
@@ -1400,7 +1544,7 @@ class Visualizacao:
                     xytext=(0, 12 * (len(propostas_banzos) - 1 - i)),
                     textcoords='offset points', ha='left', va='bottom',
                     color=cores_por_posicao[proposta.posicao],
-                    fontsize=8, family='monospace', weight='bold',
+                    fontsize=8, family='DejaVu Sans', weight='bold',
                     bbox=dict(facecolor='white', edgecolor='none', alpha=.88, pad=1.0),
                     visible=False, zorder=30, annotation_clip=False)
                 grupos['Detalhamento longitudinal'].append(anot)
@@ -1472,13 +1616,13 @@ class Visualizacao:
             for i, grupo in enumerate(grupos_estribos.values()):
                 proposta = grupo['proposta']
                 anot = ax.annotate(
-                    (f"{grupo['quantidade']} {grupo['posicao']} phi {proposta.bitola_mm:g} "
+                    (f"{grupo['quantidade']} {grupo['posicao']} {SIMBOLO_BITOLA}{proposta.bitola_mm:g} "
                      f'c/{proposta.espacamento_cm:g} '
                      f'(Asws = {proposta.asw_fornecida_cm2_m:.2f} cm²/m)'),
                     xy=(.982, .035), xycoords='axes fraction',
                     xytext=(0, 12 * (len(grupos_estribos) - 1 - i)),
                     textcoords='offset points', ha='right', va='bottom',
-                    color=grupo['cor'], fontsize=8, family='monospace', weight='bold',
+                    color=grupo['cor'], fontsize=8, family='DejaVu Sans', weight='bold',
                     bbox=dict(facecolor='white', edgecolor='none', alpha=.9, pad=1),
                     visible=False, zorder=30, annotation_clip=False)
                 grupos['Detalhamento transversal'].append(anot)
@@ -1759,7 +1903,8 @@ class Visualizacao:
                     atualizar_faixas_n1_n2()
 
                     visivel = estados['Detalhamento longitudinal']
-                    for artista in (*artistas_n1_n2, *artistas_banzos):
+                    for artista in (*artistas_n1_n2, *artistas_banzos,
+                                    *artistas_alertas_apoios):
                         artista.set_visible(visivel)
 
                     fig.canvas.draw_idle()

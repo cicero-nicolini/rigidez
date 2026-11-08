@@ -12,7 +12,7 @@ modelo = Modelo(
     a=25.0, 
     b=120.0, 
     c=30.0, 
-    ap1=40.0, 
+    ap1=30.0, 
     ap2=40.0,
     w=0.45 + 0.06 + 0.02 - 0.0023,
     fck=35.0, 
@@ -24,7 +24,7 @@ modelo = Modelo(
     θ=30.0, 
     αE=1,espacamento_maximo = 20.0,
     vinculacao_esquerda=1,
-    vinculacao_direita=1
+    vinculacao_direita=3
 )
 
 visualizacao = Visualizacao(modelo)
@@ -45,7 +45,7 @@ visualizacao.desenhar_geometria(
     decalagem_automatica=True,
     ancoragem_automatica=True,
     boa_aderencia=True,
-    
+    ancoragem_apoios=True,
     mostrar_normal=False,
     mostrar_cortante=False,
     mostrar_diagrama_as_longitudinal=False,
