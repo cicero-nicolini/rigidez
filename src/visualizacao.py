@@ -204,7 +204,20 @@ class Visualizacao:
 
     def desenhar_geometria(self, mostrar_nos=False, mostrar_barras=False,
                        mostrar_apoios=True, ax=None, controles=True,
-                       estados_iniciais=None, escalas_iniciais=None):
+                       estados_iniciais=None, escalas_iniciais=None,
+                       checkbox_iniciais=None, mostrar_controles_escala=True,
+                       mostrar_geometria=None, mostrar_momento=None,
+                       mostrar_cortante=None, mostrar_normal=None,
+                       mostrar_deformada=None, mostrar_armaduras=None,
+                       mostrar_valores=None, mostrar_escalas=None,
+                       mostrar_modelo=None, mostrar_pontos_nos=None,
+                       mostrar_numeros_nos=None, mostrar_numeros_barras=None,
+                       mostrar_cargas_distribuidas=None,
+                       mostrar_forcas_nodais=None, mostrar_momentos_nodais=None,
+                       mostrar_diagrama_as_longitudinal=None,
+                       mostrar_diagrama_as_transversal=None,
+                       mostrar_armadura_longitudinal=None,
+                       mostrar_armadura_transversal=None):
         """
             Desenha a estrutura e configura os controles interativos.
 
@@ -216,6 +229,40 @@ class Visualizacao:
                 controles: Habilita os controles da interface.
                 estados_iniciais: Estados de visibilidade a restaurar.
                 escalas_iniciais: Escalas iniciais dos diagramas.
+                checkbox_iniciais: Dicionário com os estados iniciais dos
+                    checkboxes, usando os nomes apresentados na interface.
+                    Os itens omitidos mantêm seus valores padrão.
+                mostrar_controles_escala: Controla os sliders de amplificação.
+                mostrar_geometria: Estado inicial da geometria da viga.
+                mostrar_momento: Estado inicial do diagrama de momento fletor.
+                mostrar_cortante: Estado inicial do diagrama de cortante.
+                mostrar_normal: Estado inicial do diagrama de esforço normal.
+                mostrar_deformada: Estado inicial da deformada.
+                mostrar_armaduras: Estado inicial dos detalhamentos longitudinal
+                    e transversal (não dos diagramas de áreas de aço).
+                mostrar_valores: Estado inicial dos rótulos numéricos.
+                mostrar_escalas: Exibe os sliders de escala quando True.
+                    Se omitido, utiliza mostrar_controles_escala.
+                mostrar_modelo: Exibe as barras do modelo estrutural.
+                mostrar_pontos_nos: Exibe os pontos que representam os nós.
+                mostrar_numeros_nos: Exibe a numeração dos nós. Quando omitido,
+                    utiliza o valor de mostrar_nos (compatibilidade).
+                mostrar_numeros_barras: Exibe a numeração das barras. Quando
+                    omitido, utiliza mostrar_barras (compatibilidade).
+                mostrar_cargas_distribuidas: Exibe as cargas distribuídas.
+                mostrar_forcas_nodais: Exibe as forças nodais.
+                mostrar_momentos_nodais: Exibe os momentos nodais.
+                mostrar_diagrama_as_longitudinal: Exibe o diagrama de Asl/Asl2.
+                mostrar_diagrama_as_transversal: Exibe o diagrama de Asw/s.
+                mostrar_armadura_longitudinal: Exibe o detalhamento longitudinal.
+                mostrar_armadura_transversal: Exibe o detalhamento transversal.
+
+                Os parâmetros de visibilidade com valor None preservam o
+                estado padrão, ou o estado restaurado da figura.
+
+                Os parâmetros opcionais com valor None mantêm os estados
+                padrão. estados_iniciais permite restaurar a interface ao
+                alternar entre esforços característicos e majorados.
 
             Returns:
                 Figura e eixos Matplotlib da visualização.
@@ -1128,19 +1175,44 @@ class Visualizacao:
                         f'C={proposta_b.comprimento_geometrico_cm:g} cm '
                         f'(As={proposta_b.as_fornecida_cm2:.2f} cm²)'
                         if proposta_b is not None else '')
+                # Reserva N1 e N2 para as barras de base. As faixas
+                # escalonadas recebem posições exclusivas, sem conflitar
+                # com as posições já utilizadas pelas armaduras dos banzos.
+                posicoes_ocupadas = {
+                    proposta.posicao for proposta in novos_banzos
+                } | {'N1', 'N2'}
+                proximo_numero = 3
+
+                def posicao_da_faixa(faixa):
+                    """Define a identificação gráfica exclusiva de cada faixa."""
+                    nonlocal proximo_numero
+
+                    if faixa.nivel in (-1, 0):
+                        return faixa.posicao
+
+                    while f'N{proximo_numero}' in posicoes_ocupadas:
+                        proximo_numero += 1
+
+                    posicao = f'N{proximo_numero}'
+                    posicoes_ocupadas.add(posicao)
+                    proximo_numero += 1
+                    return posicao
+
                 for faixa in faixas:
+                    posicao_grafica = posicao_da_faixa(faixa)
                     # Pista 0: construtiva. Pistas seguintes: níveis resistentes.
                     indice_pista = 0 if faixa.nivel == -1 else max(0, faixa.nivel) + 1
                     y_arm = y_faixa(faixa.face, indice_pista)
-                    cor = cores_por_posicao[faixa.posicao]
+                    cor = cores_por_posicao.get(
+                        faixa.posicao, '#566573'
+                    )
                     linha, = ax.plot(
                         [faixa.inicio_cm, faixa.fim_cm], [y_arm, y_arm],
                         color=cor, lw=2.6, zorder=12,
                         visible=False)
                     rotulo = ax.annotate(
-                        f'{faixa.quantidade} {faixa.posicao} Ø{faixa.bitola_mm:g} '
-                        f'C={faixa.fim_cm - faixa.inicio_cm:.1f} cm '
-                        f'({"construtiva" if faixa.nivel == -1 else f"nível {faixa.nivel}"})',
+                        f'{faixa.quantidade} {posicao_grafica} Ø{faixa.bitola_mm:g} '
+                        f'C={faixa.fim_cm - faixa.inicio_cm:.1f} cm',
                         ((faixa.inicio_cm + faixa.fim_cm) / 2, y_arm),
                         xytext=(0, 10),
                         textcoords='offset points', ha='center', va='bottom', fontsize=8,
@@ -1154,7 +1226,7 @@ class Visualizacao:
             self.armaduras_longitudinais = propostas
 
             # A relação inferior esquerda fica reservada às armaduras dos banzos.
-            # N1/N2 já têm quantidade, bitola, comprimento e nível nas faixas externas.
+            # As faixas externas já exibem posição, quantidade, bitola e comprimento.
             for i, proposta in enumerate(propostas_banzos):
                 texto = (f'{proposta.posicao}  {proposta.quantidade} '
                          f'Ø{proposta.bitola_mm:g}  '
@@ -1234,7 +1306,7 @@ class Visualizacao:
             'Nós': True,
             'Números dos nós': mostrar_nos,
             'Números das barras': mostrar_barras,
-            'Apoios': mostrar_apoios,
+            'Apoios': mostrar_apoios if estados_iniciais is None else None,
             'Cargas distribuídas': True,
             'Forças nodais': True,
             'Momentos nodais': True,
@@ -1248,10 +1320,75 @@ class Visualizacao:
             'Armadura transversal': False,
             'Valores': False,
         }
+        # Relaciona os rótulos da interface aos grupos de artistas internos.
+        # Os dois diagramas de armadura têm nomes distintos do detalhamento.
+        nomes_internos_checkbox = {
+            'Esforço Normal': 'Esforço normal',
+            'Diagrama As longitudinal': 'Armadura longitudinal',
+            'Diagrama As transversal': 'Armadura transversal',
+            'Armadura longitudinal': 'Detalhamento longitudinal',
+            'Armadura transversal': 'Detalhamento transversal',
+        }
+
         # Ao reconstruir a figura, preserva os estados sem acionar callbacks.
         if estados_iniciais is not None:
             estados.update({chave: bool(valor) for chave, valor in
                             estados_iniciais.items() if chave in estados})
+
+        # Os estados fornecidos explicitamente têm prioridade sobre os padrões.
+        # A configuração antiga continua disponível para compatibilidade.
+        if checkbox_iniciais is not None:
+            if not isinstance(checkbox_iniciais, dict):
+                raise TypeError('checkbox_iniciais deve ser um dicionário.')
+
+            for rotulo, marcado in checkbox_iniciais.items():
+                nome = nomes_internos_checkbox.get(rotulo, rotulo)
+                if nome not in estados:
+                    raise ValueError(f'Checkbox desconhecido: {rotulo!r}.')
+                estados[nome] = bool(marcado)
+
+        # Configuração simplificada: parâmetros booleanos da chamada.
+        # None significa que o estado padrão (ou restaurado) é preservado.
+        opcoes_simples = {
+            # Geometria, modelo e identificação dos elementos.
+            'Geometria da viga': mostrar_geometria,
+            'Modelo estrutural': mostrar_modelo,
+            'Nós': mostrar_pontos_nos,
+            'Números dos nós': mostrar_numeros_nos,
+            'Números das barras': mostrar_numeros_barras,
+            'Apoios': mostrar_apoios,
+
+            # Carregamentos aplicados ao modelo.
+            'Cargas distribuídas': mostrar_cargas_distribuidas,
+            'Forças nodais': mostrar_forcas_nodais,
+            'Momentos nodais': mostrar_momentos_nodais,
+
+            # Resultados da análise estrutural.
+            'Deformada': mostrar_deformada,
+            'Momento fletor': mostrar_momento,
+            'Esforço normal': mostrar_normal,
+            'Esforço cortante': mostrar_cortante,
+
+            # Diagramas de armadura e detalhamentos.
+            'Armadura longitudinal': mostrar_diagrama_as_longitudinal,
+            'Armadura transversal': mostrar_diagrama_as_transversal,
+            'Detalhamento longitudinal': mostrar_armadura_longitudinal,
+            'Detalhamento transversal': mostrar_armadura_transversal,
+            'Valores': mostrar_valores,
+        }
+
+        for nome, marcado in opcoes_simples.items():
+            if marcado is not None:
+                estados[nome] = bool(marcado)
+
+        if mostrar_armaduras is not None:
+            estados['Detalhamento longitudinal'] = bool(mostrar_armaduras)
+            estados['Detalhamento transversal'] = bool(mostrar_armaduras)
+
+        # O nome curto tem prioridade quando os dois forem informados.
+        if mostrar_escalas is not None:
+            mostrar_controles_escala = bool(mostrar_escalas)
+
         grupos['Deformada'] = linhas_deformada
         # Inicialização: artistas não controlados diretamente ficam ocultos.
         for nome, artistas in grupos.items():
@@ -1317,13 +1454,7 @@ class Visualizacao:
                 'Diagrama As longitudinal', 'Diagrama As transversal',
                 'Armadura longitudinal', 'Armadura transversal', 'Valores',
             ]
-            nome_interno = {
-                'Esforço Normal': 'Esforço normal',
-                'Diagrama As longitudinal': 'Armadura longitudinal',
-                'Diagrama As transversal': 'Armadura transversal',
-                'Armadura longitudinal': 'Detalhamento longitudinal',
-                'Armadura transversal': 'Detalhamento transversal',
-            }
+            nome_interno = nomes_internos_checkbox
             # Ícones quadrados de 12 pt (Matplotlib >= 3.7).
             # O parâmetro `s` corresponde à área em pontos quadrados.
             checks = CheckButtons(
@@ -1466,9 +1597,10 @@ class Visualizacao:
                     fig.clear()
                     novo_ax = fig.add_subplot(111)
                     self.desenhar_geometria(
-                        ax=novo_ax, controles=True,
+                        ax=novo_ax, controles=controles,
                         estados_iniciais=estados_anteriores,
                         escalas_iniciais=escalas_anteriores,
+                        mostrar_controles_escala=mostrar_controles_escala,
                     )
                     novo_ax.set_xlim(*limites_atuais[0])
                     novo_ax.set_ylim(*limites_atuais[1])
@@ -1477,92 +1609,93 @@ class Visualizacao:
                 seletor.on_clicked(trocar_tipo)
                 self._controles.append(seletor)
 
-            area_escala_m = fig.add_axes([.82, .215, .14, .020])
-            slider_m = Slider(area_escala_m, 'M', 0.0, 5.0,
-                              valinit=1.0, valfmt='%.2f')
-            slider_m.on_changed(lambda fator: atualizar_momento(escala_momento * fator))
-            self._controles.append(slider_m)
-            # Sliders independentes dos esforços N e V.
-            for tipo, sigla, y_slider in (
-                ('Esforço normal', 'N', 0.17),
-                ('Esforço cortante', 'V', 0.125),
-            ):
-                info = diagramas_nv[tipo]
-                area_nv = fig.add_axes([.82, y_slider, .14, .020])
-                controle_nv = Slider(
-                    area_nv, sigla, 0.0,
-                    5.0,
-                    valinit=1.0, valfmt='%.2f'
-                )
-                controle_nv.on_changed(
-                    lambda fator, atualizar=info['atualizar'], base=info['fator']:
-                    atualizar(base * fator)
-                )
-                self._controles.append(controle_nv)
-
-
-
-            # Uma escala para ASL/ASL2 e outra para ASW_S.
-            for titulo, sigla, y_slider in (
-                ('Armadura longitudinal', 'Asl', 0.100),
-                ('Armadura transversal', 'Asw/s', 0.060),
-            ):
-                info = diagramas_armadura[titulo]
-                area_arm = fig.add_axes([.82, y_slider, .14, .014])
-                controle_arm = Slider(
-                    area_arm, sigla, 0.0,
-                    5.0,
-                    valinit=1.0, valfmt='%.2f'
-                )
-                controle_arm.on_changed(
-                    lambda fator, atualizar=info['atualizar'], base=info['fator']:
-                    atualizar(base * fator)
-                )
-                self._controles.append(controle_arm)
-
-            if linhas_deformada:
-                # Controle de amplificação.
-                area_slider = fig.add_axes([
-                    0.82, 0.019, 0.14, 0.014
-                ])
-
-                slider = Slider(
-                    ax=area_slider,
-                    label="Def.",
-                    valmin=0.0,
-                    valmax=5.0,
-                    valinit=1.0,
-                    valfmt="%.2f"
-                )
-
-                slider.on_changed(lambda fator: atualizar_deformada(escala_auto * fator))
-
-                self._controles.append(slider)
-
-                # Informação sobre os deslocamentos calculados.
-                no_max = max(
-                    nos,
-                    key=lambda no: np.hypot(
-                        *deslocamento_no(no)[:2]
+            if mostrar_controles_escala:
+                area_escala_m = fig.add_axes([.82, .215, .14, .020])
+                slider_m = Slider(area_escala_m, 'M', 0.0, 5.0,
+                                  valinit=1.0, valfmt='%.2f')
+                slider_m.on_changed(lambda fator: atualizar_momento(escala_momento * fator))
+                self._controles.append(slider_m)
+                # Sliders independentes dos esforços N e V.
+                for tipo, sigla, y_slider in (
+                    ('Esforço normal', 'N', 0.17),
+                    ('Esforço cortante', 'V', 0.125),
+                ):
+                    info = diagramas_nv[tipo]
+                    area_nv = fig.add_axes([.82, y_slider, .14, .020])
+                    controle_nv = Slider(
+                        area_nv, sigla, 0.0,
+                        5.0,
+                        valinit=1.0, valfmt='%.2f'
                     )
-                )
+                    controle_nv.on_changed(
+                        lambda fator, atualizar=info['atualizar'], base=info['fator']:
+                        atualizar(base * fator)
+                    )
+                    self._controles.append(controle_nv)
 
-                ux, uy, rz = deslocamento_no(no_max)
 
-                texto_resultados = (
-                    f"Nó {no_max.num}\n"
-                    f"ux = {ux:.4e}\n"
-                    f"uy = {uy:.4e}\n"
-                    f"θz = {rz:.4e} rad"
-                )
 
-                fig.text(
-                    0.08, 0.010,
-                    texto_resultados,
-                    fontsize=8,
-                    va="bottom",
-                    family="monospace"
-                )
+                # Uma escala para ASL/ASL2 e outra para ASW_S.
+                for titulo, sigla, y_slider in (
+                    ('Armadura longitudinal', 'Asl', 0.100),
+                    ('Armadura transversal', 'Asw/s', 0.060),
+                ):
+                    info = diagramas_armadura[titulo]
+                    area_arm = fig.add_axes([.82, y_slider, .14, .014])
+                    controle_arm = Slider(
+                        area_arm, sigla, 0.0,
+                        5.0,
+                        valinit=1.0, valfmt='%.2f'
+                    )
+                    controle_arm.on_changed(
+                        lambda fator, atualizar=info['atualizar'], base=info['fator']:
+                        atualizar(base * fator)
+                    )
+                    self._controles.append(controle_arm)
+
+                if linhas_deformada:
+                    # Controle de amplificação.
+                    area_slider = fig.add_axes([
+                        0.82, 0.019, 0.14, 0.014
+                    ])
+
+                    slider = Slider(
+                        ax=area_slider,
+                        label="Def.",
+                        valmin=0.0,
+                        valmax=5.0,
+                        valinit=1.0,
+                        valfmt="%.2f"
+                    )
+
+                    slider.on_changed(lambda fator: atualizar_deformada(escala_auto * fator))
+
+                    self._controles.append(slider)
+
+                    # Informação sobre os deslocamentos calculados.
+                    no_max = max(
+                        nos,
+                        key=lambda no: np.hypot(
+                            *deslocamento_no(no)[:2]
+                        )
+                    )
+
+                    ux, uy, rz = deslocamento_no(no_max)
+
+                    texto_resultados = (
+                        f"Nó {no_max.num}\n"
+                        f"ux = {ux:.4e}\n"
+                        f"uy = {uy:.4e}\n"
+                        f"θz = {rz:.4e} rad"
+                    )
+
+                    fig.text(
+                        0.08, 0.010,
+                        texto_resultados,
+                        fontsize=8,
+                        va="bottom",
+                        family="monospace"
+                    )
 
             # Reaplica as escalas selecionadas pelo usuário após recriar
             # os artistas. Não altera os estados dos checkboxes.
