@@ -362,7 +362,7 @@ class Visualizacao:
         import matplotlib.pyplot as plt
         import numpy as np
         from matplotlib.patches import Polygon, Rectangle, Circle
-        from matplotlib.widgets import CheckButtons, Button, Slider, RadioButtons
+        from matplotlib.widgets import CheckButtons, Button, Slider
 
         nos, barras = self.modelo.nos, self.modelo.barras
         if not nos or not barras:
@@ -1950,62 +1950,6 @@ class Visualizacao:
                 controle_n1.on_changed(alterar_escalonamento)
                 controle_n2.on_changed(alterar_escalonamento)
                 self._controles.extend((controle_n1, controle_n2))
-
-            # Seletor disponível somente para modelos calculados nas duas
-            # combinações (opção 2). Os detalhamentos permanecem de ELU.
-            if (hasattr(self.modelo, 'resultados_caracteristicos')
-                    and hasattr(self.modelo, 'resultados_calculo')
-                    and callable(getattr(self.modelo, 'selecionar_esforcos', None))):
-                # Posiciona o seletor no canto superior direito da área
-                # de plotagem, sem sobrepor os controles de escala laterais.
-                area_tipo = ax.inset_axes([.785, .815, .205, .145],
-                                         transform=ax.transAxes, zorder=20)
-                area_tipo.set_facecolor((1, 1, 1, 0.92))
-                area_tipo.set_title('Esforços exibidos', fontsize=9, loc='left')
-                rotulos_tipo = ['Característicos', 'Majorados']
-                tipo_atual = getattr(self.modelo, 'tipo_esforcos', 'calculo')
-                seletor = RadioButtons(area_tipo, rotulos_tipo,
-                                       active=0 if tipo_atual == 'caracteristicos' else 1)
-                for spine in area_tipo.spines.values():
-                    spine.set_visible(False)
-
-                def trocar_tipo(rotulo):
-                    novo_tipo = ('caracteristicos' if rotulo == 'Característicos'
-                                 else 'calculo')
-                    if novo_tipo == getattr(self.modelo, 'tipo_esforcos', 'calculo'):
-                        return
-                    # Reconstrói os diagramas: os artistas anteriores contêm
-                    # valores numéricos calculados na criação da figura.
-                    # Captura os estados internos, incluindo nomes de grupos
-                    # diferentes dos rótulos apresentados nos checkboxes.
-                    estados_anteriores = estados.copy()
-                    escalas_anteriores = {
-                        controle.label.get_text(): controle.val
-                        for controle in self._controles
-                        if isinstance(controle, Slider)
-                    }
-                    limites_atuais = (ax.get_xlim(), ax.get_ylim())
-                    self.modelo.selecionar_esforcos(novo_tipo)
-                    if hasattr(self, '_zoom_scroll_cid'):
-                        fig.canvas.mpl_disconnect(self._zoom_scroll_cid)
-                    for controle_antigo in self._controles:
-                        if hasattr(controle_antigo, 'disconnect_events'):
-                            controle_antigo.disconnect_events()
-                    fig.clear()
-                    novo_ax = fig.add_subplot(111)
-                    self.desenhar_geometria(
-                        ax=novo_ax, controles=controles,
-                        estados_iniciais=estados_anteriores,
-                        escalas_iniciais=escalas_anteriores,
-                        mostrar_controles_escala=mostrar_controles_escala,
-                        decalagem_automatica=decalagem_automatica,
-                    )
-                    novo_ax.set_xlim(*limites_atuais[0])
-                    novo_ax.set_ylim(*limites_atuais[1])
-                    fig.canvas.draw_idle()
-
-                seletor.on_clicked(trocar_tipo)
-                self._controles.append(seletor)
 
             if mostrar_controles_escala:
                 area_escala_m = fig.add_axes([.82, .215, .14, .020])
