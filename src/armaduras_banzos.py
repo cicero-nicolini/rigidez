@@ -54,7 +54,8 @@ def _zonas(modelo):
 
 def propor_banzos(modelo, bitolas=BITOLAS_MM,
                    bitola_porta_estribo_mm=8.0, quantidade_porta_estribo=2,
-                   primeira_posicao=3, cobrimento_esquematico_cm=3.5):
+                   primeira_posicao=3, cobrimento_esquematico_cm=3.5,
+                   areas_continuas_por_furo=None):
     """Escolhe barras complementares nos banzos, preservando N1/N2.
 
     Convenção idêntica ao detalhamento longitudinal original:
@@ -98,7 +99,11 @@ def propor_banzos(modelo, bitolas=BITOLAS_MM,
                 total_req = demanda[face]
                 externa = ((nome == 'inferior' and face == 'inferior') or
                            (nome == 'superior' and face == 'superior'))
-                existente = continuas.get(face, 0.0) if externa else 0.0
+                if externa and areas_continuas_por_furo is not None:
+                    posicao_externa = 'N1' if nome == 'inferior' else 'N2'
+                    existente = areas_continuas_por_furo.get(indice, {}).get(posicao_externa, 0.0)
+                else:
+                    existente = continuas.get(face, 0.0) if externa else 0.0
                 area = max(0.0, total_req - existente)
                 # Não criar barra adicional onde a armadura contínua já
                 # atende à demanda. Em faces internas sem demanda, manter

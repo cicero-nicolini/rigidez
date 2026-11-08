@@ -24,7 +24,7 @@ modelo = Modelo(
     θ=30.0, 
     αE=1,espacamento_maximo = 20.0,
     vinculacao_esquerda=1,
-    vinculacao_direita=3
+    vinculacao_direita=1
 )
 
 visualizacao = Visualizacao(modelo)

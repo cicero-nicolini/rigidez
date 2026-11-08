@@ -41,6 +41,9 @@ class Visualizacao:
     def __init__(self, modelo):
         self.modelo = modelo
         self._controles = []  # Mantém referências aos widgets Matplotlib.
+        self.niveis_n1 = 0
+        self.niveis_n2 = 0
+        self.armaduras_escalonadas = []
 
     @staticmethod
     def _trechos_geometricos(barras):
@@ -974,6 +977,8 @@ class Visualizacao:
 
             propostas = propor_longitudinais(m)
             propostas_banzos = propor_banzos(m)
+            artistas_banzos = []
+            anotacoes_banzos = {}
             todas = [*propostas, *propostas_banzos]
             # Paleta discreta, com distinção suficiente entre as posições.
             cores = ('#c0392b', '#21618c', '#148f77', '#8e44ad',
@@ -982,65 +987,110 @@ class Visualizacao:
             cores_por_posicao = {p.posicao: cores[i % len(cores)]
                                  for i, p in enumerate(todas)}
             cobrimento_esquematico = min(3.5, float(m.h) * 0.15)
-            for proposta in propostas:
-                y_arm = ((-float(m.h) / 2 + cobrimento_esquematico)
-                         if proposta.face == 'inferior'
-                         else (float(m.h) / 2 - cobrimento_esquematico))
-                cor = cores_por_posicao[proposta.posicao]
-                linha, = ax.plot(
-                    [proposta.inicio_cm, proposta.fim_cm], [y_arm, y_arm],
-                    color=cor, lw=2.6, zorder=12, visible=False)
-                rotulo = ax.annotate(
-                    proposta.posicao,
-                    ((proposta.inicio_cm + proposta.fim_cm) / 2, y_arm),
-                    xytext=(0, -12 if proposta.face == 'inferior' else 9),
-                    textcoords='offset points', ha='center', fontsize=9,
-                    weight='bold', color=cor, visible=False, zorder=16,
-                    bbox=dict(facecolor='white', edgecolor='none', alpha=.78, pad=.5))
-                grupos['Detalhamento longitudinal'].extend((linha, rotulo))
+            # Faixas de detalhamento externas à geometria: uma pista por nível.
+            # Coordenadas são apenas gráficas; não alteram a posição física das barras.
+            distancia_inicial = max(48.0, float(m.h) * 0.60)
+            distancia_niveis = max(48.0, float(m.h) * 0.60)
+            def y_faixa(face, indice):
+                sinal = 1.0 if face == 'superior' else -1.0
+                return sinal * (float(m.h) / 2.0 + distancia_inicial
+                                + indice * distancia_niveis)
+
+            # Os artistas de N1/N2 são atualizados sem alterar os banzos.
+            artistas_n1_n2 = []
+
+            def atualizar_faixas_n1_n2():
+                from .escalonamento_n1_n2 import propor_escalonamento, continuidade_nos_furos
+                for artista in artistas_n1_n2:
+                    artista.remove()
+                    if artista in grupos['Detalhamento longitudinal']:
+                        grupos['Detalhamento longitudinal'].remove(artista)
+                artistas_n1_n2.clear()
+                faixas = propor_escalonamento(
+                    m, niveis_n1=self.niveis_n1, niveis_n2=self.niveis_n2)
+                faixas, areas_continuas = continuidade_nos_furos(m, faixas)
+                self.armaduras_escalonadas = faixas
+                # Redimensiona apenas os complementos dos banzos externos,
+                # descontando a armadura N1/N2 que atravessa cada furo.
+                novos_banzos = propor_banzos(
+                    m, areas_continuas_por_furo=areas_continuas)
+                for artista in artistas_banzos:
+                    artista.remove()
+                    if artista in grupos['Detalhamento longitudinal']:
+                        grupos['Detalhamento longitudinal'].remove(artista)
+                artistas_banzos.clear()
+                self.armaduras_banzos = novos_banzos
+                for proposta_b in novos_banzos:
+                    # Armaduras dos banzos permanecem na posição original,
+                    # junto à abertura, independentemente das pistas N1/N2.
+                    y_b = proposta_b.y_cm
+                    afast = max(3.0, min(5.0, float(m.h) * 0.07))
+                    if proposta_b.banzo == 'inferior' and proposta_b.face == 'inferior':
+                        y_b += afast
+                    elif proposta_b.banzo == 'superior' and proposta_b.face == 'superior':
+                        y_b -= afast
+                    cor_b = cores_por_posicao.get(proposta_b.posicao, '#566573')
+                    linha_b, = ax.plot(
+                        [proposta_b.inicio_cm, proposta_b.fim_cm], [y_b, y_b],
+                        color=cor_b, lw=2.6, zorder=14, visible=False)
+                    rotulo_b = ax.annotate(
+                        proposta_b.posicao,
+                        ((proposta_b.inicio_cm + proposta_b.fim_cm) / 2, y_b),
+                        xytext=(0, 10 if proposta_b.face == 'superior' else -13),
+                        textcoords='offset points', ha='center', fontsize=8,
+                        weight='bold', color=cor_b, visible=False, zorder=16,
+                        bbox=dict(facecolor='white', edgecolor='none', alpha=.85, pad=.5))
+                    artistas_banzos.extend((linha_b, rotulo_b))
+                    grupos['Detalhamento longitudinal'].extend((linha_b, rotulo_b))
+                for pos, anot in anotacoes_banzos.items():
+                    proposta_b = next((b for b in novos_banzos if b.posicao == pos), None)
+                    anot.set_text(
+                        f'{pos}  {proposta_b.quantidade} Ø{proposta_b.bitola_mm:g} '
+                        f'C={proposta_b.comprimento_geometrico_cm:g} cm '
+                        f'(As={proposta_b.as_fornecida_cm2:.2f} cm²)'
+                        if proposta_b is not None else '')
+                for faixa in faixas:
+                    # Pista 0: construtiva. Pistas seguintes: níveis resistentes.
+                    indice_pista = 0 if faixa.nivel == -1 else max(0, faixa.nivel) + 1
+                    y_arm = y_faixa(faixa.face, indice_pista)
+                    cor = cores_por_posicao[faixa.posicao]
+                    linha, = ax.plot(
+                        [faixa.inicio_cm, faixa.fim_cm], [y_arm, y_arm],
+                        color=cor, lw=2.6, zorder=12,
+                        visible=False)
+                    rotulo = ax.annotate(
+                        f'{faixa.quantidade} {faixa.posicao} Ø{faixa.bitola_mm:g} '
+                        f'C={faixa.fim_cm - faixa.inicio_cm:.1f} cm '
+                        f'({"construtiva" if faixa.nivel == -1 else f"nível {faixa.nivel}"})',
+                        ((faixa.inicio_cm + faixa.fim_cm) / 2, y_arm),
+                        xytext=(0, 10),
+                        textcoords='offset points', ha='center', va='bottom', fontsize=8,
+                        weight='bold', color=cor, visible=linha.get_visible(),
+                        zorder=16,
+                        bbox=dict(facecolor='white', edgecolor='none', alpha=.78, pad=.5))
+                    artistas_n1_n2.extend((linha, rotulo))
+                    grupos['Detalhamento longitudinal'].extend((linha, rotulo))
+
+            atualizar_faixas_n1_n2()
             self.armaduras_longitudinais = propostas
 
-            # As armaduras das faces externas dos banzos recebem um afastamento
-            # apenas gráfico em relação às barras contínuas N1 e N2.
-            afastamento_visual = max(3.0, min(5.0, float(m.h) * 0.07))
-            for proposta in propostas_banzos:
-                y_arm = proposta.y_cm
-                if proposta.banzo == 'inferior' and proposta.face == 'inferior':
-                    y_arm += afastamento_visual
-                elif proposta.banzo == 'superior' and proposta.face == 'superior':
-                    y_arm -= afastamento_visual
-                cor = cores_por_posicao[proposta.posicao]
-                linha, = ax.plot(
-                    [proposta.inicio_cm, proposta.fim_cm], [y_arm, y_arm],
-                    color=cor, lw=2.6, zorder=14, visible=False)
-                # Rótulos alternados acima/abaixo das barras para reduzir colisões.
-                deslocamento = 10 if proposta.face == 'superior' else -13
-                rotulo = ax.annotate(
-                    proposta.posicao,
-                    ((proposta.inicio_cm + proposta.fim_cm) / 2, y_arm),
-                    xytext=(0, deslocamento), textcoords='offset points',
-                    ha='center', fontsize=8, weight='bold', color=cor,
-                    visible=False, zorder=16,
-                    bbox=dict(facecolor='white', edgecolor='none', alpha=.85, pad=.5))
-                grupos['Detalhamento longitudinal'].extend((linha, rotulo))
-            self.armaduras_banzos = propostas_banzos
-
-            # Relação de ferros dentro do gráfico, no canto inferior esquerdo.
-            # Coordenadas do eixo tornam a posição independente do zoom/pan.
-            for i, proposta in enumerate(todas):
+            # A relação inferior esquerda fica reservada às armaduras dos banzos.
+            # N1/N2 já têm quantidade, bitola, comprimento e nível nas faixas externas.
+            for i, proposta in enumerate(propostas_banzos):
                 texto = (f'{proposta.posicao}  {proposta.quantidade} '
                          f'Ø{proposta.bitola_mm:g}  '
                          f'C={proposta.comprimento_geometrico_cm:g} cm '
                          f'(As={proposta.as_fornecida_cm2:.2f} cm²)')
                 anot = ax.annotate(
                     texto, xy=(0.018, 0.035), xycoords='axes fraction',
-                    xytext=(0, 12 * (len(todas) - 1 - i)),
+                    xytext=(0, 12 * (len(propostas_banzos) - 1 - i)),
                     textcoords='offset points', ha='left', va='bottom',
                     color=cores_por_posicao[proposta.posicao],
                     fontsize=8, family='monospace', weight='bold',
                     bbox=dict(facecolor='white', edgecolor='none', alpha=.88, pad=1.0),
                     visible=False, zorder=30, annotation_clip=False)
                 grupos['Detalhamento longitudinal'].append(anot)
+                anotacoes_banzos[proposta.posicao] = anot
 
         # Estribos em seção cheia e nos banzos, com relação à direita.
         grupos['Detalhamento transversal'] = []
@@ -1126,6 +1176,11 @@ class Visualizacao:
 
         margem_x = max(dx * 0.025, escala * 0.015)
         margem_y = max(dy * 0.15, escala * 0.065)
+        # Reserva espaço para as pistas externas, inclusive após alternar níveis.
+        if hasattr(m, 'h') and hasattr(m, 'ap1'):
+            margem_pistas = max(38.0, float(m.h) * 0.48) + 5 * max(32.0, float(m.h) * 0.40)
+            ymin = min(ymin, -float(m.h) / 2 - margem_pistas)
+            ymax = max(ymax, float(m.h) / 2 + margem_pistas)
         limites = ((xmin-margem_x, xmax+margem_x),
                    (ymin-margem_y, ymax+margem_y))
         ax.set_xlim(*limites[0])
@@ -1245,6 +1300,43 @@ class Visualizacao:
             reset.on_clicked(restaurar)
 
             self._controles = [checks, reset]
+
+            # Controle independente de níveis em uma pequena janela.
+            area_escal = fig.add_axes([.80, .306, .17, .030])
+            botao_escal = Button(area_escal, 'Escalonar N1 / N2')
+
+            def abrir_escalonamento(_):
+                from matplotlib.widgets import Slider as SliderEsc
+                janela = plt.figure(figsize=(7.4, 3.0))
+                janela.suptitle('Escalonamento teórico — N1 e N2 (sem ancoragens)')
+                a1 = janela.add_axes([.23, .59, .62, .11])
+                a2 = janela.add_axes([.23, .32, .62, .11])
+                controle_n1 = SliderEsc(a1, 'N1 inferior', 0, 3,
+                                        valinit=self.niveis_n1, valstep=1)
+                controle_n2 = SliderEsc(a2, 'N2 superior', 0, 3,
+                                        valinit=self.niveis_n2, valstep=1)
+                aviso = janela.text(.08, .09,
+                    '0 = contínua; 1–3 = máximo de grupos adicionais.\n'
+                    'Comprimentos teóricos, não utilizar para corte de barras.',
+                    fontsize=9)
+
+                def alterar(_):
+                    self.niveis_n1 = int(controle_n1.val)
+                    self.niveis_n2 = int(controle_n2.val)
+                    atualizar_faixas_n1_n2()
+                    visivel = estados['Detalhamento longitudinal']
+                    for artista in (*artistas_n1_n2, *artistas_banzos):
+                        artista.set_visible(visivel)
+                    fig.canvas.draw_idle()
+
+                controle_n1.on_changed(alterar)
+                controle_n2.on_changed(alterar)
+                # Referências mantidas para evitar coleta dos widgets.
+                janela._controles_escalonamento = (controle_n1, controle_n2, aviso)
+                janela.show()
+
+            botao_escal.on_clicked(abrir_escalonamento)
+            self._controles.append(botao_escal)
 
             # Seletor disponível somente para modelos calculados nas duas
             # combinações (opção 2). Os detalhamentos permanecem de ELU.
