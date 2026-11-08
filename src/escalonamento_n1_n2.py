@@ -1,7 +1,7 @@
 """Escalonamento TEÓRICO independente das armaduras N1 e N2.
 
-Não calcula ancoragens nem comprimentos de corte ou detalhamento
-normativo. Permite decalagem geométrica parametrizada da demanda. Mantém a bitola e a quantidade total propostas pela rotina original.
+Calcula opcionalmente a ancoragem necessária de barras retas, mas não
+constitui detalhamento executivo normativo completo. Permite decalagem geométrica parametrizada da demanda. Mantém a bitola e a quantidade total propostas pela rotina original.
 Unidades: cm, cm². Resultados majorados devem estar selecionados no modelo.
 """
 from dataclasses import dataclass
@@ -159,9 +159,149 @@ def _decalagem_trecho(modelo, a, b, automatica, manual_cm):
     return max(distancias, default=0.0)
 
 
+def comprimento_ancoragem_basico(barra, bitola_mm, boa_aderencia=True):
+    """Estima l_b de barra reta tracionada, em cm (NBR 6118).
+
+    Usa f_bd = eta1 * eta2 * eta3 * f_ctd e l_b = phi/4 * f_yd/f_bd.
+    Requer que as propriedades de aço e concreto estejam em unidades coerentes.
+    Não inclui ganchos, emendas ou confinamento.
+
+    Args:
+        barra: Elemento com concreto.fctd e aco.fyd.
+        bitola_mm: Diâmetro nominal da barra longitudinal, em mm.
+        boa_aderencia: True para região de boa aderência; False para má.
+
+    Returns:
+        Comprimento básico de ancoragem em cm.
+
+    Raises:
+        ValueError: Se faltarem propriedades ou valores válidos.
+    """
+    phi = float(bitola_mm) / 10.0
+    if phi <= 0 or not isfinite(phi):
+        raise ValueError('Bitola de ancoragem inválida.')
+    concreto, aco = getattr(barra, 'concreto', None), getattr(barra, 'aco', None)
+    fctd = float(getattr(concreto, 'fctd', 0.0))
+    fyd = float(getattr(aco, 'fyd', 0.0))
+    if not all(isfinite(v) and v > 0 for v in (fctd, fyd)):
+        raise ValueError('Ancoragem requer concreto.fctd e aco.fyd positivos.')
+    eta1 = 2.25  # Barras nervuradas; confirmar a classe real da barra.
+    eta2 = 1.0 if boa_aderencia else 0.7
+    eta3 = 1.0 if bitola_mm <= 32 else (132.0 - bitola_mm) / 100.0
+    if eta3 <= 0:
+        raise ValueError('Bitola fora da faixa suportada para ancoragem.')
+    fbd = eta1 * eta2 * eta3 * fctd
+    return phi * fyd / (4.0 * fbd)
+
+
+def comprimento_ancoragem_necessario(barra, bitola_mm, as_calc_cm2,
+                                    as_ef_cm2, boa_aderencia=True,
+                                    alpha=1.0):
+    """Calcula l_b,nec de barras retas tracionadas, em cm.
+
+    l_b,nec = max(alpha * l_b * As,calc / As,ef; l_b,min), com
+    l_b,min = max(0,3*l_b; 10*phi; 10 cm).
+
+    Args:
+        barra: Elemento com materiais e propriedades de resistência.
+        bitola_mm: Diâmetro da barra, em milímetros.
+        as_calc_cm2: Área necessária atribuída ao grupo ancorado, em cm².
+        as_ef_cm2: Área efetiva desse mesmo grupo, em cm².
+        boa_aderencia: Condição de aderência definida pelo projetista.
+        alpha: Coeficiente de ancoragem (1,0 para barra reta tracionada).
+
+    Returns:
+        Comprimento necessário de ancoragem, em centímetros.
+
+    Raises:
+        ValueError: Se os parâmetros forem inválidos.
+    """
+    as_calc = float(as_calc_cm2)
+    as_ef = float(as_ef_cm2)
+    alpha = float(alpha)
+    if not all(isfinite(v) for v in (as_calc, as_ef, alpha)):
+        raise ValueError('Áreas e coeficiente de ancoragem devem ser finitos.')
+    if as_calc < 0 or as_ef <= 0 or alpha <= 0:
+        raise ValueError('Áreas ou coeficiente de ancoragem inválidos.')
+    if as_calc > as_ef + 1e-6:
+        raise ValueError('As,calc não pode superar As,ef do grupo ancorado.')
+
+    lb = comprimento_ancoragem_basico(barra, bitola_mm, boa_aderencia)
+    phi_cm = float(bitola_mm) / 10.0
+    lb_min = max(0.3 * lb, 10.0 * phi_cm, 10.0)
+    return max(alpha * lb * as_calc / as_ef, lb_min)
+
+
+def _barras_trecho(modelo, a, b):
+    """Seleciona elementos horizontais de seção cheia de um trecho."""
+    barras = []
+    for barra in modelo.barras:
+        if getattr(barra, 'ficticia', False):
+            continue
+        noi, noj = barra.noi, barra.noj
+        xa, xb = sorted((float(noi.x), float(noj.x)))
+        if (abs(float(noi.y)) > 1e-6 or abs(float(noj.y)) > 1e-6
+                or xb - xa < 1e-8 or xa < a - 1e-6 or xb > b + 1e-6):
+            continue
+        barras.append(barra)
+    return barras
+
+
+def _ancoragem_necessaria_trecho(barras, bitola_mm, as_calc, as_ef,
+                                 boa_aderencia):
+    """Adota o maior l_b,nec entre os elementos da região analisada."""
+    if not barras:
+        raise ValueError('Sem elementos para calcular ancoragem do trecho.')
+    return max(comprimento_ancoragem_necessario(
+        barra, bitola_mm, as_calc, as_ef, boa_aderencia)
+        for barra in barras)
+
+
+def _demanda_maxima(segmentos, face_idx, inicio, fim):
+    """Maior As requerida no intervalo, com interpolação nas extremidades."""
+    valores = []
+    for xa, xb, va, vb in segmentos:
+        esq, dir = max(inicio, xa), min(fim, xb)
+        if dir < esq - 1e-8:
+            continue
+        for x in (esq, dir):
+            t = (x - xa) / (xb - xa)
+            valores.append(va[face_idx] + t * (vb[face_idx] - va[face_idx]))
+    return max(valores, default=0.0)
+
+
+def _intervalos_ancorados(intervalos, a, b, segmentos, face_idx,
+                          as_previa, as_grupo, barras, bitola_mm,
+                          boa_aderencia, habilitada):
+    """Decalação já aplicada; acrescenta l_b,nec a cada faixa resistente.
+
+    A área calculada atribuída ao grupo é a demanda máxima da faixa
+    menos a capacidade dos grupos anteriores. A área efetiva corresponde
+    somente às barras deste grupo. Essa aproximação não substitui a
+    verificação local de tensões nas seções de interrupção.
+    """
+    resultado = []
+    for inicio, fim in intervalos:
+        if habilitada:
+            demanda = _demanda_maxima(segmentos, face_idx, inicio, fim)
+            as_calc = min(as_grupo, max(0.0, demanda - as_previa))
+            lb_nec = _ancoragem_necessaria_trecho(
+                barras, bitola_mm, as_calc, as_grupo, boa_aderencia)
+        else:
+            lb_nec = 0.0
+        esquerda = max(a, inicio - lb_nec)
+        direita = min(b, fim + lb_nec)
+        if resultado and esquerda <= resultado[-1][1] + 1e-6:
+            resultado[-1] = (resultado[-1][0], max(direita, resultado[-1][1]))
+        else:
+            resultado.append((esquerda, direita))
+    return resultado
+
+
 def propor_escalonamento(modelo, niveis_n1=2, niveis_n2=2,
                           barras_base_n1=2, barras_base_n2=2, decalagem_cm=None,
-                          decalagem_automatica=True):
+                          decalagem_automatica=True, ancoragem_automatica=False,
+                          boa_aderencia=True):
     """Escalonamento teórico por face em trechos cheios.
 
     Onde As requerida é zero, propõe 2 porta-estribos com bitola igual
@@ -170,7 +310,10 @@ def propor_escalonamento(modelo, niveis_n1=2, niveis_n2=2,
 
     Args:
         decalagem_cm: Ampliação bilateral da envoltória de demanda, em cm.
-            Valor 0 mantém o comportamento anterior. Não inclui ancoragem.
+        ancoragem_automatica: Acrescenta l_b,nec a cada extremidade livre das faixas
+            resistentes, após a decalagem, sem ultrapassar o trecho.
+        boa_aderencia: Condição de aderência das barras (deve ser verificada
+            pelo projetista).
     """
     from .armaduras_transversais import propor_transversais
 
@@ -197,16 +340,24 @@ def propor_escalonamento(modelo, niveis_n1=2, niveis_n2=2,
             decalagem_trecho = _decalagem_trecho(
                 modelo, a, b, decalagem_automatica, decalagem_cm)
             locais = [seg for seg in segmentos if seg[0] >= a-1e-6 and seg[1] <= b+1e-6]
-            positivos = _decalar_intervalos(
+            barras_trecho = (_barras_trecho(modelo, a, b)
+                             if ancoragem_automatica else [])
+            demanda_decalada = _decalar_intervalos(
                 _intervalos_acima(locais, face_idx, 1e-9, a, b),
                 a, b, decalagem_trecho)
-            # Porta-estribos são propostos apenas onde As da face é nula.
-            for ini, fim in _subtrair((a, b), positivos):
-                saida.append(FaixaEscalonada(original.posicao, original.face,
-                           2, trecho.bitola_mm, ini, fim, -1))
+            positivos = _intervalos_ancorados(
+                demanda_decalada, a, b, locais, face_idx,
+                0.0, n * area_barra, barras_trecho,
+                original.bitola_mm, boa_aderencia, ancoragem_automatica)
             if not positivos:
+                for ini, fim in _subtrair((a, b), positivos):
+                    saida.append(FaixaEscalonada(original.posicao, original.face,
+                                2, trecho.bitola_mm, ini, fim, -1))
                 continue
             if limite == 0 or n <= base_min:
+                for ini, fim in _subtrair((a, b), positivos):
+                    saida.append(FaixaEscalonada(original.posicao, original.face,
+                                2, trecho.bitola_mm, ini, fim, -1))
                 # No modo 0, mantém a proposta resistente original, sem
                 # escalonamento, dentro de cada trecho de seção cheia.
                 for ini, fim in positivos:
@@ -214,6 +365,13 @@ def propor_escalonamento(modelo, niveis_n1=2, niveis_n2=2,
                                 n, original.bitola_mm, ini, fim, 0))
                 continue
             base = min(n, max(2, int(base_min)))
+            positivos = _intervalos_ancorados(
+                demanda_decalada, a, b, locais, face_idx,
+                0.0, base * area_barra, barras_trecho,
+                original.bitola_mm, boa_aderencia, ancoragem_automatica)
+            for ini, fim in _subtrair((a, b), positivos):
+                saida.append(FaixaEscalonada(original.posicao, original.face,
+                            2, trecho.bitola_mm, ini, fim, -1))
             for ini, fim in positivos:
                 saida.append(FaixaEscalonada(original.posicao, original.face,
                             base, original.bitola_mm, ini, fim, 0))
@@ -223,10 +381,16 @@ def propor_escalonamento(modelo, niveis_n1=2, niveis_n2=2,
                         for i in range(grupos)]
             acumulado = base
             for nivel, tamanho in enumerate(tamanhos, 1):
-                for ini, fim in _decalar_intervalos(
-                        _intervalos_acima(locais, face_idx,
-                                          acumulado*area_barra, a, b),
-                        a, b, decalagem_trecho):
+                demanda_nivel = _decalar_intervalos(
+                    _intervalos_acima(locais, face_idx,
+                                      acumulado * area_barra, a, b),
+                    a, b, decalagem_trecho)
+                faixas_nivel = _intervalos_ancorados(
+                    demanda_nivel, a, b, locais, face_idx,
+                    acumulado * area_barra, tamanho * area_barra,
+                    barras_trecho, original.bitola_mm,
+                    boa_aderencia, ancoragem_automatica)
+                for ini, fim in faixas_nivel:
                     saida.append(FaixaEscalonada(original.posicao, original.face,
                                  tamanho, original.bitola_mm, ini, fim, nivel))
                 acumulado += tamanho

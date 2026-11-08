@@ -49,6 +49,70 @@ def print_vetor(v) -> None:
               ' ' + fmt(v[i]).rjust(maior_l))
 
 
+def _comprimento_modulado(inicio_cm, fim_cm, limite_esquerdo_cm,
+                          limite_direito_cm, modulo_cm=5.0):
+    """Arredonda o comprimento para cima, ampliando a barra quando possível.
+
+    Args:
+        inicio_cm: Coordenada inicial da barra, em centímetros.
+        fim_cm: Coordenada final da barra, em centímetros.
+        limite_esquerdo_cm: Limite físico disponível à esquerda.
+        limite_direito_cm: Limite físico disponível à direita.
+        modulo_cm: Módulo de comprimento, em centímetros.
+
+    Returns:
+        Tupla (início, fim) com comprimento múltiplo do módulo.
+
+    Raises:
+        ValueError: Se o comprimento modular não couber nos limites.
+
+    Notes:
+        O arredondamento é sempre para cima, preservando a extensão
+        necessária por decalagem e ancoragem. Não comprova a viabilidade
+        física da ancoragem nas regiões de apoio ou de abertura.
+    """
+    from math import ceil
+
+    inicio = float(inicio_cm)
+    fim = float(fim_cm)
+    minimo = float(limite_esquerdo_cm)
+    maximo = float(limite_direito_cm)
+    comprimento = fim - inicio
+    if comprimento <= 0:
+        raise ValueError('Comprimento de armadura inválido.')
+
+    # Tolerância numérica evita arredondar 215,00000000001 para 220.
+    comprimento_final = modulo_cm * ceil((comprimento - 1e-7) / modulo_cm)
+    adicional = max(0.0, comprimento_final - comprimento)
+    if adicional < 1e-7:
+        return inicio, fim
+
+    direita = min(adicional, max(0.0, maximo - fim))
+    esquerda = adicional - direita
+    if esquerda > max(0.0, inicio - minimo) + 1e-6:
+        raise ValueError(
+            'Não há espaço para modular o comprimento da armadura '
+            f'de {comprimento:.3f} cm para {comprimento_final:.0f} cm.')
+
+    return inicio - esquerda, fim + direita
+
+
+def _modular_armaduras(armaduras, limite_esquerdo_cm, limite_direito_cm):
+    """Modula as coordenadas das barras e mantém seus demais atributos."""
+    from dataclasses import replace
+
+    resultado = []
+    for armadura in armaduras:
+        inicio, fim = _comprimento_modulado(
+            armadura.inicio_cm, armadura.fim_cm,
+            limite_esquerdo_cm, limite_direito_cm)
+        alteracoes = {'inicio_cm': inicio, 'fim_cm': fim}
+        if hasattr(armadura, 'comprimento_geometrico_cm'):
+            alteracoes['comprimento_geometrico_cm'] = fim - inicio
+        resultado.append(replace(armadura, **alteracoes))
+    return resultado
+
+
 class Visualizacao:
     """Exibe geometria, nós, barras e apoios com controles interativos."""
 
@@ -221,7 +285,8 @@ class Visualizacao:
                        mostrar_armadura_longitudinal=None,
                        mostrar_armadura_transversal=None,
                        decalagem_cm=None, mostrar_diagrama_decalado=None,
-                       decalagem_automatica=True):
+                       decalagem_automatica=True, ancoragem_automatica=False,
+                       boa_aderencia=True):
         """
             Desenha a estrutura e configura os controles interativos.
 
@@ -263,6 +328,10 @@ class Visualizacao:
                 mostrar_diagrama_decalado: Exibe a envoltória decaladada.
                 decalagem_automatica: Estima a decalagem pelas inclinações
                     de bielas e estribos; decalagem_cm tem prioridade.
+                ancoragem_automatica: Acrescenta comprimento necessário l_b,nec de
+                    ancoragem às faixas N1/N2 após a decalagem.
+                boa_aderencia: Condição de aderência adotada para as barras.
+                    Deve ser confirmada para cada face e situação de concretagem.
 
                 Os parâmetros de visibilidade com valor None preservam o
                 estado padrão, ou o estado restaurado da figura.
@@ -1176,6 +1245,14 @@ class Visualizacao:
 
             propostas = propor_longitudinais(m)
             propostas_banzos = propor_banzos(m)
+            if ancoragem_automatica:
+                from .ancoragem_banzos import ancorar_banzos
+                propostas_banzos, self.diagnosticos_ancoragem_banzos = ancorar_banzos(
+                    m, propostas_banzos, boa_aderencia=boa_aderencia)
+            limite_x_esquerdo = float(m.ap1) / 2.0
+            limite_x_direito = limite_x_esquerdo + float(m.l)
+            propostas_banzos = _modular_armaduras(
+                propostas_banzos, limite_x_esquerdo, limite_x_direito)
             artistas_banzos = []
             anotacoes_banzos = {}
             todas = [*propostas, *propostas_banzos]
@@ -1209,18 +1286,28 @@ class Visualizacao:
                     m, niveis_n1=self.niveis_n1, niveis_n2=self.niveis_n2,
                     decalagem_cm=(self.decalagem_cm if self._decalagem_manual
                                   else None),
-                    decalagem_automatica=decalagem_automatica)
+                    decalagem_automatica=decalagem_automatica,
+                    ancoragem_automatica=ancoragem_automatica,
+                    boa_aderencia=boa_aderencia)
                 faixas, areas_continuas = continuidade_nos_furos(m, faixas)
+                faixas = _modular_armaduras(
+                    faixas, limite_x_esquerdo, limite_x_direito)
                 self.armaduras_escalonadas = faixas
                 # Redimensiona apenas os complementos dos banzos externos,
                 # descontando a armadura N1/N2 que atravessa cada furo.
                 novos_banzos = propor_banzos(
                     m, areas_continuas_por_furo=areas_continuas)
+                if ancoragem_automatica:
+                    from .ancoragem_banzos import ancorar_banzos
+                    novos_banzos, self.diagnosticos_ancoragem_banzos = ancorar_banzos(
+                        m, novos_banzos, boa_aderencia=boa_aderencia)
                 for artista in artistas_banzos:
                     artista.remove()
                     if artista in grupos['Detalhamento longitudinal']:
                         grupos['Detalhamento longitudinal'].remove(artista)
                 artistas_banzos.clear()
+                novos_banzos = _modular_armaduras(
+                    novos_banzos, limite_x_esquerdo, limite_x_direito)
                 self.armaduras_banzos = novos_banzos
                 for proposta_b in novos_banzos:
                     # Armaduras dos banzos permanecem na posição original,
@@ -1248,7 +1335,7 @@ class Visualizacao:
                     proposta_b = next((b for b in novos_banzos if b.posicao == pos), None)
                     anot.set_text(
                         f'{proposta_b.quantidade} {pos} phi {proposta_b.bitola_mm:g} '
-                        f'c = {proposta_b.comprimento_geometrico_cm:g} cm '
+                        f'c = {proposta_b.comprimento_geometrico_cm:.0f} cm '
                         f'(As = {proposta_b.as_fornecida_cm2:.2f} cm²)'
                         if proposta_b is not None else '')
                 # Reserva N1 e N2 para as barras de base. As faixas
@@ -1288,7 +1375,7 @@ class Visualizacao:
                         visible=False)
                     rotulo = ax.annotate(
                         f'{faixa.quantidade} {posicao_grafica} Ø{faixa.bitola_mm:g} '
-                        f'C={faixa.fim_cm - faixa.inicio_cm:.1f} cm',
+                        f'C={faixa.fim_cm - faixa.inicio_cm:.0f} cm',
                         ((faixa.inicio_cm + faixa.fim_cm) / 2, y_arm),
                         xytext=(0, 10),
                         textcoords='offset points', ha='center', va='bottom', fontsize=8,
@@ -1306,7 +1393,7 @@ class Visualizacao:
             for i, proposta in enumerate(propostas_banzos):
                 texto = (f'{proposta.quantidade} {proposta.posicao} '
                          f'phi {proposta.bitola_mm:g} '
-                         f'c = {proposta.comprimento_geometrico_cm:g} cm '
+                         f'c = {proposta.comprimento_geometrico_cm:.0f} cm '
                          f'(As = {proposta.as_fornecida_cm2:.2f} cm²)')
                 anot = ax.annotate(
                     texto, xy=(0.018, 0.035), xycoords='axes fraction',

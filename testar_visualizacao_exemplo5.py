@@ -30,9 +30,32 @@ modelo = Modelo(
 visualizacao = Visualizacao(modelo)
 
 visualizacao.desenhar_geometria(
-    mostrar_nos=False,
-    mostrar_barras=False,
+    mostrar_geometria=True,
+    mostrar_modelo=False,
+    mostrar_pontos_nos=False,
+    mostrar_numeros_nos=False,
+    mostrar_numeros_barras=False,
+    mostrar_apoios=True,
+    mostrar_cargas_distribuidas=False,
+    mostrar_forcas_nodais=False,
+    mostrar_momentos_nodais=False,
+    mostrar_deformada=False,
+    mostrar_momento=True,
+    mostrar_diagrama_decalado=True,
+    decalagem_automatica=True,
+    ancoragem_automatica=True,
+    boa_aderencia=True,
+    
+    mostrar_normal=False,
+    mostrar_cortante=False,
+    mostrar_diagrama_as_longitudinal=False,
+    mostrar_diagrama_as_transversal=False,
+    mostrar_armadura_longitudinal=True,
+    mostrar_armadura_transversal=True,
+    mostrar_valores=True,
+    mostrar_escalas=True,
     controles=True
+    
 )
 
 plt.show()
