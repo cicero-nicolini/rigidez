@@ -1171,9 +1171,9 @@ class Visualizacao:
                 for pos, anot in anotacoes_banzos.items():
                     proposta_b = next((b for b in novos_banzos if b.posicao == pos), None)
                     anot.set_text(
-                        f'{pos}  {proposta_b.quantidade} Ø{proposta_b.bitola_mm:g} '
-                        f'C={proposta_b.comprimento_geometrico_cm:g} cm '
-                        f'(As={proposta_b.as_fornecida_cm2:.2f} cm²)'
+                        f'{proposta_b.quantidade} {pos} phi {proposta_b.bitola_mm:g} '
+                        f'c = {proposta_b.comprimento_geometrico_cm:g} cm '
+                        f'(As = {proposta_b.as_fornecida_cm2:.2f} cm²)'
                         if proposta_b is not None else '')
                 # Reserva N1 e N2 para as barras de base. As faixas
                 # escalonadas recebem posições exclusivas, sem conflitar
@@ -1228,10 +1228,10 @@ class Visualizacao:
             # A relação inferior esquerda fica reservada às armaduras dos banzos.
             # As faixas externas já exibem posição, quantidade, bitola e comprimento.
             for i, proposta in enumerate(propostas_banzos):
-                texto = (f'{proposta.posicao}  {proposta.quantidade} '
-                         f'Ø{proposta.bitola_mm:g}  '
-                         f'C={proposta.comprimento_geometrico_cm:g} cm '
-                         f'(As={proposta.as_fornecida_cm2:.2f} cm²)')
+                texto = (f'{proposta.quantidade} {proposta.posicao} '
+                         f'phi {proposta.bitola_mm:g} '
+                         f'c = {proposta.comprimento_geometrico_cm:g} cm '
+                         f'(As = {proposta.as_fornecida_cm2:.2f} cm²)')
                 anot = ax.annotate(
                     texto, xy=(0.018, 0.035), xycoords='axes fraction',
                     xytext=(0, 12 * (len(propostas_banzos) - 1 - i)),
@@ -1260,36 +1260,66 @@ class Visualizacao:
             topo, base = h / 2 - cobrimento, -h / 2 + cobrimento
             cores_estribos = ('#8050a0', '#b05b20', '#167f76', '#b03267',
                               '#4169a2', '#737c18', '#a04a36', '#6b55a8')
-            for i, proposta in enumerate(todos_estribos):
-                cor = cores_estribos[i % len(cores_estribos)]
+
+            # Agrupa posições com o mesmo detalhamento e a mesma altura
+            # de estribo, preservando os trechos físicos de cada proposta.
+            # Arredondamentos apenas estabilizam a comparação de floats.
+            grupos_estribos = {}
+            for proposta in todos_estribos:
                 if hasattr(proposta, 'y_inferior_cm'):
-                    ybaixo, yalto = proposta.y_inferior_cm, proposta.y_superior_cm
+                    ybaixo, yalto = (float(proposta.y_inferior_cm),
+                                     float(proposta.y_superior_cm))
                 else:
                     ybaixo, yalto = base, topo
+
+                altura = yalto - ybaixo
+                chave = (round(float(proposta.asw_fornecida_cm2_m), 8),
+                         round(altura, 8),
+                         round(float(proposta.bitola_mm), 8),
+                         int(proposta.ramos),
+                         round(float(proposta.espacamento_cm), 8))
+                if chave not in grupos_estribos:
+                    indice = len(grupos_estribos)
+                    grupos_estribos[chave] = {
+                        'posicao': f'E{indice + 1}',
+                        'cor': cores_estribos[indice % len(cores_estribos)],
+                        'quantidade': 0,
+                        'proposta': proposta,
+                    }
+                grupo = grupos_estribos[chave]
+                grupo['quantidade'] += int(proposta.quantidade)
+
+                cor = grupo['cor']
                 xs = np.linspace(proposta.inicio_cm, proposta.fim_cm,
                                  proposta.quantidade)
                 for x in xs:
                     linha, = ax.plot([x, x], [ybaixo, yalto], color=cor,
                                      lw=.85, zorder=11, visible=False)
                     grupos['Detalhamento transversal'].append(linha)
+
                 centro = (proposta.inicio_cm + proposta.fim_cm) / 2
                 rotulo = ax.annotate(
-                    proposta.posicao, (centro, (ybaixo + yalto) / 2),
+                    grupo['posicao'], (centro, (ybaixo + yalto) / 2),
                     ha='center', va='center', fontsize=8, weight='bold',
                     color=cor, zorder=17, visible=False,
                     bbox=dict(facecolor='white', edgecolor='none', alpha=.88, pad=1))
                 grupos['Detalhamento transversal'].append(rotulo)
+
+            # Uma linha por posição E#, somando as quantidades dos trechos.
+            for i, grupo in enumerate(grupos_estribos.values()):
+                proposta = grupo['proposta']
                 anot = ax.annotate(
-                    (f'{proposta.posicao} Ø{proposta.bitola_mm:g} '
+                    (f"{grupo['quantidade']} {grupo['posicao']} phi {proposta.bitola_mm:g} "
                      f'c/{proposta.espacamento_cm:g} '
-                     f'(Asws={proposta.asw_fornecida_cm2_m:.2f} cm²/m)'),
+                     f'(Asws = {proposta.asw_fornecida_cm2_m:.2f} cm²/m)'),
                     xy=(.982, .035), xycoords='axes fraction',
-                    xytext=(0, 12 * (len(todos_estribos) - 1 - i)),
+                    xytext=(0, 12 * (len(grupos_estribos) - 1 - i)),
                     textcoords='offset points', ha='right', va='bottom',
-                    color=cor, fontsize=8, family='monospace', weight='bold',
+                    color=grupo['cor'], fontsize=8, family='monospace', weight='bold',
                     bbox=dict(facecolor='white', edgecolor='none', alpha=.9, pad=1),
                     visible=False, zorder=30, annotation_clip=False)
                 grupos['Detalhamento transversal'].append(anot)
+
             self.armaduras_transversais = propostas_estribos
             self.armaduras_estribos_banzos = propostas_banzos_estribos
 
@@ -1517,42 +1547,59 @@ class Visualizacao:
 
             self._controles = [checks, reset]
 
-            # Controle independente de níveis em uma pequena janela.
-            area_escal = fig.add_axes([.80, .306, .17, .030])
-            botao_escal = Button(area_escal, 'Escalonar N1 / N2')
+            # ------------------------------------------------------------
+            # ESCALONAMENTO N1/N2 — CONTROLES NA ÁREA DE PLOTAGEM
+            # ------------------------------------------------------------
+            # Os sliders ficam fixos no canto superior esquerdo dos eixos.
+            # Suas coordenadas são relativas à área de plotagem, de modo que
+            # o posicionamento não depende dos limites ou do zoom da viga.
+            if hasattr(m, 'ap1') and hasattr(m, 'l') and hasattr(m, 'h'):
+                area_n1 = ax.inset_axes(
+                    [.105, .925, .225, .025],
+                    transform=ax.transAxes,
+                    zorder=21,
+                )
+                area_n2 = ax.inset_axes(
+                    [.105, .865, .225, .025],
+                    transform=ax.transAxes,
+                    zorder=21,
+                )
 
-            def abrir_escalonamento(_):
-                from matplotlib.widgets import Slider as SliderEsc
-                janela = plt.figure(figsize=(7.4, 3.0))
-                janela.suptitle('Escalonamento teórico — N1 e N2 (sem ancoragens)')
-                a1 = janela.add_axes([.23, .59, .62, .11])
-                a2 = janela.add_axes([.23, .32, .62, .11])
-                controle_n1 = SliderEsc(a1, 'N1 inferior', 0, 3,
-                                        valinit=self.niveis_n1, valstep=1)
-                controle_n2 = SliderEsc(a2, 'N2 superior', 0, 3,
-                                        valinit=self.niveis_n2, valstep=1)
-                aviso = janela.text(.08, .09,
-                    '0 = contínua; 1–3 = máximo de grupos adicionais.\n'
-                    'Comprimentos teóricos, não utilizar para corte de barras.',
-                    fontsize=9)
+                for area_escalonamento in (area_n1, area_n2):
+                    area_escalonamento.set_facecolor((1, 1, 1, .92))
 
-                def alterar(_):
+                controle_n1 = Slider(
+                    area_n1, 'N1', valmin=0, valmax=3,
+                    valinit=self.niveis_n1, valstep=1, valfmt='%d',
+                )
+                controle_n2 = Slider(
+                    area_n2, 'N2', valmin=0, valmax=3,
+                    valinit=self.niveis_n2, valstep=1, valfmt='%d',
+                )
+
+                ax.text(
+                    .015, .985, 'Escalonamento N1 / N2',
+                    transform=ax.transAxes, ha='left', va='top',
+                    fontsize=9, fontweight='bold', zorder=22,
+                    bbox=dict(facecolor='white', edgecolor='none', alpha=.85),
+                )
+
+                def alterar_escalonamento(_):
+                    """Atualiza as faixas de armadura após alterar um nível."""
                     self.niveis_n1 = int(controle_n1.val)
                     self.niveis_n2 = int(controle_n2.val)
+
                     atualizar_faixas_n1_n2()
+
                     visivel = estados['Detalhamento longitudinal']
                     for artista in (*artistas_n1_n2, *artistas_banzos):
                         artista.set_visible(visivel)
+
                     fig.canvas.draw_idle()
 
-                controle_n1.on_changed(alterar)
-                controle_n2.on_changed(alterar)
-                # Referências mantidas para evitar coleta dos widgets.
-                janela._controles_escalonamento = (controle_n1, controle_n2, aviso)
-                janela.show()
-
-            botao_escal.on_clicked(abrir_escalonamento)
-            self._controles.append(botao_escal)
+                controle_n1.on_changed(alterar_escalonamento)
+                controle_n2.on_changed(alterar_escalonamento)
+                self._controles.extend((controle_n1, controle_n2))
 
             # Seletor disponível somente para modelos calculados nas duas
             # combinações (opção 2). Os detalhamentos permanecem de ELU.
