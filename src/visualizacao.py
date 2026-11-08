@@ -2,6 +2,13 @@
 
 # Funções legadas preservadas para compatibilidade com os cálculos.
 def print_matriz(m) -> None:
+    """
+        Imprime uma matriz com índices e colunas alinhados.
+
+        Args:
+            m: Matriz bidimensional de valores numéricos.
+    """
+
     l, c = m.shape
     tamanho_colunas = []
     for i in range(c):
@@ -24,6 +31,13 @@ def print_matriz(m) -> None:
 
 
 def print_vetor(v) -> None:
+    """
+        Imprime um vetor numérico com índices alinhados.
+
+        Args:
+            v: Vetor unidimensional de valores numéricos.
+    """
+
     def fmt(n):
         if abs(n) < 0.06 or abs(n) > 1e6:
             return f'{n:#.2g}'
@@ -39,6 +53,13 @@ class Visualizacao:
     """Exibe geometria, nós, barras e apoios com controles interativos."""
 
     def __init__(self, modelo):
+        """
+            Inicializa os atributos da visualização estrutural.
+
+            Args:
+                modelo: Modelo com nós, barras e resultados da análise.
+        """
+
         self.modelo = modelo
         self._controles = []  # Mantém referências aos widgets Matplotlib.
         self.niveis_n1 = 0
@@ -47,7 +68,15 @@ class Visualizacao:
 
     @staticmethod
     def _trechos_geometricos(barras):
-        """Agrupa barras reais consecutivas, colineares e de mesma seção."""
+        """
+            Agrupa barras reais consecutivas, colineares e de mesma seção.
+
+            Args:
+                barras: Sequência de barras do modelo estrutural.
+
+            Returns:
+                Lista de grupos de barras geometricamente compatíveis.
+        """
         from collections import defaultdict
         import numpy as np
 
@@ -93,10 +122,16 @@ class Visualizacao:
 
     @staticmethod
     def _pontos_rotulo_trechos(grupos, valores_por_barra):
-        """Retorna início/fim e extremos interiores de cada trecho.
+        """
+            Seleciona pontos de identificação dos valores ao longo dos trechos.
 
-        valores_por_barra: id(barra) -> (valor_i, valor_j).
-        Os extremos são pesquisados nas extremidades de todos os elementos.
+            Args:
+                grupos: Trechos de barras agrupadas por continuidade geométrica.
+                valores_por_barra: Dicionário que associa cada barra aos valores
+                    nas extremidades inicial e final.
+
+            Returns:
+                Lista de tuplas contendo nó, valor e barra de referência.
         """
         saida = []
         for grupo in grupos:
@@ -136,12 +171,22 @@ class Visualizacao:
         return saida
 
     def calcular_momento_barra(self, barra, n_pontos=50):
-        """Interpola linearmente o momento a partir de barra.fl, sem cargas.
+        """
+            Obtém a interpolação gráfica dos momentos internos da barra.
 
-        Convencao de momentos internos adotada:
-        M(0) = -fl[2] e M(L) = fl[5].
-        O diagrama e uma interpolacao grafica entre os valores de extremidade,
-        nao a distribuicao exata sob carregamento entre nos.
+            Args:
+                barra: Elemento estrutural com esforços de extremidade.
+                n_pontos: Número de pontos usados na representação.
+
+            Returns:
+                Tupla com as posições locais e os momentos interpolados.
+
+            Raises:
+                ValueError: Se o comprimento ou o vetor de esforços for inválido.
+
+            Notes:
+                A interpolação é linear entre -fl[2] e fl[5] e não
+                representa necessariamente a distribuição exata sob cargas.
         """
         import numpy as np
 
@@ -160,6 +205,25 @@ class Visualizacao:
     def desenhar_geometria(self, mostrar_nos=False, mostrar_barras=False,
                        mostrar_apoios=True, ax=None, controles=True,
                        estados_iniciais=None, escalas_iniciais=None):
+        """
+            Desenha a estrutura e configura os controles interativos.
+
+            Args:
+                mostrar_nos: Exibe inicialmente os números dos nós.
+                mostrar_barras: Exibe inicialmente os números das barras.
+                mostrar_apoios: Exibe inicialmente os apoios.
+                ax: Eixos Matplotlib opcionais.
+                controles: Habilita os controles da interface.
+                estados_iniciais: Estados de visibilidade a restaurar.
+                escalas_iniciais: Escalas iniciais dos diagramas.
+
+            Returns:
+                Figura e eixos Matplotlib da visualização.
+
+            Raises:
+                ValueError: Se o modelo não contiver nós ou barras.
+        """
+
         import matplotlib.pyplot as plt
         import numpy as np
         from matplotlib.patches import Polygon, Rectangle, Circle
@@ -182,6 +246,9 @@ class Visualizacao:
         escala = max(dx, dy, 1.0)
         tam_apoio = 0.018 * escala
 
+        # ------------------------------------------------------------------
+        # GEOMETRIA DA VIGA E ABERTURAS
+        # ------------------------------------------------------------------
         # Silhueta única da viga e dos pilares, com uma ou várias aberturas.
         # Compatível com Modelo (abertura única) e ModeloFuros.
         geometria_viga = []
@@ -255,6 +322,9 @@ class Visualizacao:
                 ax.add_patch(bloco)
                 geometria_viga.append(bloco)
 
+        # ------------------------------------------------------------------
+        # GRUPOS DE ARTISTAS E MODELO ESTRUTURAL
+        # ------------------------------------------------------------------
         grupos = {'Modelo estrutural': [], 'Nós': [], 'Números dos nós': [], 'Números das barras': [],
                   'Apoios': [], 'Cargas distribuídas': [], 'Forças nodais': [], 'Momentos nodais': []}
 
@@ -350,6 +420,9 @@ class Visualizacao:
                     ax.add_patch(artista)
             grupos['Apoios'].extend(artistas)
 
+        # ------------------------------------------------------------------
+        # CARREGAMENTOS DISTRIBUÍDOS
+        # ------------------------------------------------------------------
         # Cargas distribuídas: Py local, positivo no eixo y local da barra.
 
         # Cargas distribuídas nos eixos locais das barras.
@@ -512,6 +585,9 @@ class Visualizacao:
 
             grupos['Cargas distribuídas'].append(etiqueta)
 
+        # ------------------------------------------------------------------
+        # FORÇAS E MOMENTOS NODAIS
+        # ------------------------------------------------------------------
         # Forças nodais em coordenadas globais.
         for no in nos:
             for valor, ux, uy, desloc in ((no.Fx, 1, 0, (0,12)), (no.Fy, 0, 1, (12,0))):
@@ -969,6 +1045,9 @@ class Visualizacao:
 
 
 
+        # ------------------------------------------------------------------
+        # DETALHAMENTO DAS ARMADURAS LONGITUDINAIS
+        # ------------------------------------------------------------------
         # Detalhamento longitudinal: cores individuais e legenda fixa na área de desenho.
         grupos['Detalhamento longitudinal'] = []
         if hasattr(m, 'ap1') and hasattr(m, 'l') and hasattr(m, 'h'):
@@ -1092,6 +1171,9 @@ class Visualizacao:
                 grupos['Detalhamento longitudinal'].append(anot)
                 anotacoes_banzos[proposta.posicao] = anot
 
+        # ------------------------------------------------------------------
+        # DETALHAMENTO DAS ARMADURAS TRANSVERSAIS
+        # ------------------------------------------------------------------
         # Estribos em seção cheia e nos banzos, com relação à direita.
         grupos['Detalhamento transversal'] = []
         if hasattr(m, 'ap1') and hasattr(m, 'l') and (hasattr(m, 'furos') or hasattr(m, 'lf')):
@@ -1141,6 +1223,9 @@ class Visualizacao:
 
         grupos['Geometria da viga'] = geometria_viga
 
+        # ------------------------------------------------------------------
+        # CONFIGURAÇÃO DE VISIBILIDADE E CONTROLES
+        # ------------------------------------------------------------------
         # Os rótulos numéricos são controlados por uma única opção "Valores".
         # As coleções de artistas continuam separadas internamente.
         estados = {
@@ -1495,7 +1580,14 @@ class Visualizacao:
 
     def desenhar_deformada(self, ax=None, escala_inicial=None,
                           pontos_por_barra=30):
-        """Desenha a deformada de pórtico plano com interpolação de Hermite."""
+        """
+            Apresenta a deformada da estrutura em uma figura Matplotlib.
+
+            Args:
+                ax: Eixos Matplotlib opcionais.
+                escala_inicial: Escala inicial da deformada.
+                pontos_por_barra: Número de pontos de interpolação por barra.
+        """
         import numpy as np
         import matplotlib.pyplot as plt
         from matplotlib.widgets import Slider, CheckButtons
