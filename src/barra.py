@@ -202,7 +202,7 @@ class Barra:
                     Vc0 = (0.42*self.concreto.fct_m*self.secao.b*self.secao.d)/self.concreto.γc
                     Vc1 = ((Vrd2 - Vsd[i])/(Vrd2 - Vc0))*Vc0
 
-                    if N > 0 and self.x[i] > self.secao.h:
+                    if N[i] > 0 and self.x[i] > self.secao.h:
                         Vc = 0
                     else:
                         Vc = Vc1
@@ -255,7 +255,7 @@ class Barra:
             if n == 0:
                 # Flexão simples
                 
-                if Md[i] < Mdlim:
+                if Md[i] <= Mdlim:
                     # Domínio 2 ou 3
                     
                     self.x[i] = (self.secao.d - math.sqrt(self.secao.d**2-2.0*Md[i]/(self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b)))/self.concreto.λ
@@ -321,7 +321,7 @@ class Barra:
                         Rcc = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ*self.x[i]
                         
                         # Calculo da tensão na armadura 2
-                        ε2 = self.concreto.εcu*(self.x[i]-self.secao.d_linha/self.x[i])
+                        ε2 = self.concreto.εcu*(self.x[i]-self.secao.d_linha)/(self.x[i])
                     
                         if ε2 > self.aco.εyd:
                             σ2 = self.aco.fyd
@@ -391,7 +391,7 @@ class Barra:
                             # armadura dupla
                             
                             self.x[i] = xlim
-                            ε2 = self.concreto.εcu*(xlim-self.secao.d_linha/xlim)
+                            ε2 = self.concreto.εcu*(xlim-self.secao.d_linha)/(xlim)
                             if ε2 < self.aco.εyd:
                                 σ2 = self.aco.Es*ε2
                             else:
@@ -419,7 +419,7 @@ class Barra:
                             Rcc = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ*self.x[i]
 
                             if xlim < self.x[i] <= self.secao.h:
-                                ε2 = self.concreto.εcu*(self.x[i]-self.secao.d_linha/self.x[i])
+                                ε2 = self.concreto.εcu*(self.x[i]-self.secao.d_linha)/(self.x[i])
                             else:
                                 ε2 = (2/1000)*(self.x[i]-self.secao.d_linha)/(self.x[i]-3*self.secao.h/7)
                             if ε2 < self.aco.εyd:
