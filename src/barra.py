@@ -189,6 +189,8 @@ class Barra:
                         Vc = Vc0
                     
                     Vsw = Vsd[i] - Vc
+                    if Vsw < 0:
+                        Vsw = 0
                     self.ASW_S[i] = (Vsw/(0.9*self.secao.d*self.aco.fywd*(math.sin(α) + math.cos(α))))*100 #Compatibilização de unidades para testes de cm²/cm para cm²/m 
                     ASW_S_min = ((0.2*self.concreto.fct_m*self.secao.b*math.sin(α))/self.aco.fywk)*1000 #Compatibilização de unidades para testes para cm²/m 
                     self.ASW_S[i] = max(self.ASW_S[i], ASW_S_min)
@@ -206,8 +208,11 @@ class Barra:
                         Vc = 0
                     else:
                         Vc = Vc1
-
-                    self.ASW_S[i] = ((Vsd[i] - Vc)/(0.9*self.secao.d*self.aco.fywd*math.sin(α)*((1/math.tan(θ)) + (1/math.tan(α)))))*100 #Compatibilização de unidades para testes de cm²/cm para cm²/m 
+                    
+                    Vsw = Vsd[i] - Vc
+                    if Vsw < 0:
+                        Vsw = 0
+                    self.ASW_S[i] = ((Vsw)/(0.9*self.secao.d*self.aco.fywd*math.sin(α)*((1/math.tan(θ)) + (1/math.tan(α)))))*100 #Compatibilização de unidades para testes de cm²/cm para cm²/m 
                     ASW_S_min = ((0.2*self.concreto.fct_m*self.secao.b*math.sin(α))/self.aco.fywk)*1000 #Compatibilização de unidades para testes para cm²/m 
                     self.ASW_S[i] = max(self.ASW_S[i], ASW_S_min)
                 else:
@@ -245,7 +250,7 @@ class Barra:
         Md_min = 0.8*self.secao.W0*self.concreto.fctk_sup
         xmin = (self.secao.d - math.sqrt(self.secao.d**2-2.0*Md_min/(self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b)))/self.concreto.λ
         Rcc = self.concreto.αc*self.concreto.ηc*self.concreto.fcd*self.secao.b*self.concreto.λ*xmin
-        ASL_min = Rcc/self.aco.fyd
+        ASL_min = max(Rcc/self.aco.fyd, 0.0015*self.secao.b*self.secao.h)
         
         # Para cada i e n, onde i é o índice do vetor N e n é o valor
         # correspondente ao esforço normal armazenado na posição i do vetor N.
