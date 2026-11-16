@@ -134,6 +134,479 @@ class Visualizacao:
         self.decalagem_cm = 0.0  # Decalagem geométrica da demanda (cm).
         self._decalagem_manual = False
 
+    def desenhar_analise_estrutural(self, mostrar=True, carregamentos=()):
+        """Desenha pórtico, cargas e diagramas em um único eixo interativo.
+
+        Args:
+            mostrar: Abre a janela Matplotlib quando verdadeiro.
+            carregamentos: Cargas aplicadas às barras da estrutura.
+
+        Returns:
+            Tupla com figura e eixo único de visualização.
+
+        Raises:
+            ValueError: Quando faltam resultados de análise válidos.
+        """
+        import numpy as np
+        import matplotlib.pyplot as plt
+        from matplotlib.widgets import CheckButtons, Slider
+        from matplotlib.patches import FancyArrowPatch, Polygon, Circle, Arc
+        from .diagramas_esforcos import calcular_diagramas_barra
+
+        estrutura = self.modelo
+        nos, barras = estrutura.nos, estrutura.barras
+        u = np.asarray(estrutura.u, dtype=float).ravel()
+        if u.size != 3 * len(nos) or not np.all(np.isfinite(u)):
+            raise ValueError("Deslocamentos inválidos ou não calculados.")
+        if any(not hasattr(b, "fl") for b in barras):
+            raise ValueError("Calcule os esforços das barras antes de desenhar.")
+
+        fig = plt.figure(figsize=(14, 8))
+        ax = fig.add_axes([0.055, 0.09, 0.70, 0.83])
+        ax.set_aspect("equal", adjustable="datalim")
+        # Sem título na área de plotagem do Exemplo 1.
+        ax.set_xlabel("x (unidade do modelo)")
+        ax.set_ylabel("y (unidade do modelo)")
+        ax.grid(alpha=0.13)
+        extensao = max(np.ptp([n.x for n in nos]), np.ptp([n.y for n in nos]), 1.0)
+        grupos = {k: [] for k in ("Geometria do modelo", "Vinculações", "Carregamentos", "Reações",
+                                  "Deformada", "Esforço Normal", "Esforço Cortante", "Esforço Fletor")}
+        escalas = {k: 1.0 for k in ("Carregamentos", "Reações", "Deformada", "Esforço Normal", "Esforço Cortante", "Esforço Fletor")}
+        elementos_escalaveis = {k: [] for k in escalas}
+        setas_escalaveis = {"Carregamentos": [], "Reações": []}
+        cor_carga = "#b83280"
+        cor_reacao = "#1846d0"
+
+        def registrar(grupo, artista):
+            grupos[grupo].append(artista)
+            return artista
+
+        def linha_escalavel(grupo, base, vetor, cor, largura=1.8, texto=None):
+            """Registra linha e eventual rótulo para atualizar sua escala."""
+            pts = base + escalas[grupo] * vetor
+            art, = ax.plot(pts[:, 0], pts[:, 1], color=cor, lw=largura, zorder=4)
+            registrar(grupo, art)
+            rotulo = None
+            if texto is not None:
+                rotulo = registrar(grupo, ax.annotate(texto, pts[-1], fontsize=8,
+                                                      xytext=(4, 4), textcoords="offset points",
+                                                      color=cor))
+            elementos_escalaveis[grupo].append((art, rotulo, base, vetor))
+
+        def seta_carga(pos, direcao, comprimento, texto=None, grupo="Carregamentos", cor=None):
+            """Desenha flecha com ponta no ponto de aplicação, escalável."""
+            pos = np.asarray(pos, float)
+            direcao = np.asarray(direcao, float)
+            norma = np.linalg.norm(direcao)
+            if norma < 1e-12:
+                return
+            cor = cor or (cor_reacao if grupo == "Reações" else cor_carga)
+            vetor = comprimento * direcao / norma
+            inicio = pos if grupo == "Reações" else pos - escalas[grupo] * vetor
+            fim = pos + escalas[grupo] * vetor if grupo == "Reações" else pos
+            seta = FancyArrowPatch(inicio, fim, arrowstyle='-|>',
+                                    mutation_scale=12, lw=1.4,
+                                    color=cor, zorder=8)
+            ax.add_patch(seta)
+            registrar(grupo, seta)
+            rotulo = None
+            if texto:
+                rotulo = registrar(grupo, ax.annotate(
+                    texto, fim if grupo == "Reações" else inicio, xytext=(3, 3), textcoords='offset points',
+                    fontsize=8, color=cor))
+            setas_escalaveis[grupo].append((seta, rotulo, pos, vetor))
+
+        momentos_escalaveis = {"Carregamentos": [], "Reações": []}
+
+        def desenhar_momento_escalavel(pos, valor, grupo, cor, texto):
+            """Arco e ponta de seta solidários à escala do grupo."""
+            pos = np.asarray(pos, dtype=float)
+            raio = (.055 if grupo == "Carregamentos" else .042) * extensao
+            sentido = 1 if valor > 0 else -1
+            angulos = np.deg2rad(np.linspace(35, 325, 65))
+            if sentido < 0:
+                angulos = angulos[::-1]
+            curva = np.column_stack((np.cos(angulos), np.sin(angulos))) * raio
+            pontos = pos + curva
+            linha, = ax.plot(pontos[:, 0], pontos[:, 1], color=cor, lw=1.7, zorder=9)
+            registrar(grupo, linha)
+            tangente = sentido * np.array([-np.sin(angulos[-1]), np.cos(angulos[-1])])
+            vetor_ponta = curva[-1]
+            ponta = pos + vetor_ponta
+            seta = FancyArrowPatch(ponta - .35 * raio * tangente, ponta,
+                                   arrowstyle="-|>", mutation_scale=15,
+                                   lw=1.7, color=cor, zorder=10)
+            ax.add_patch(seta)
+            registrar(grupo, seta)
+            # O rótulo acompanha a extremidade superior do arco ao escalar.
+            indice_rotulo = int(np.argmax(curva[:, 1]))
+            ancora_rotulo = pos + escalas[grupo] * curva[indice_rotulo]
+            rotulo = registrar(grupo, ax.annotate(
+                texto, ancora_rotulo, xytext=(4, 5), textcoords="offset points",
+                fontsize=8, color=cor))
+            momentos_escalaveis[grupo].append((linha, seta, pos, curva,
+                                                tangente, raio, rotulo, indice_rotulo))
+
+        # Geometria, numeração e diagramas de esforços.
+        cores = {"Esforço Normal": "#7c3aed", "Esforço Cortante": "#e07b18",
+                 "Esforço Fletor": "#16803c"}
+        for barra in barras:
+            p = np.array([barra.noi.x, barra.noi.y], float)
+            q = np.array([barra.noj.x, barra.noj.y], float)
+            d = q-p
+            L = float(np.linalg.norm(d))
+            if L <= 0:
+                raise ValueError(f"Barra {barra.num} possui comprimento nulo.")
+            t, n = d/L, np.array([-d[1], d[0]])/L
+            registrar("Geometria do modelo", ax.plot([p[0], q[0]], [p[1], q[1]],
+                                                    color="0.35", lw=1.8, zorder=3)[0])
+            meio = (p+q)/2
+            registrar("Geometria do modelo", ax.annotate(f"B{int(barra.num)}", meio,
+                        xytext=(5, 6), textcoords="offset points", fontsize=9, color="0.25"))
+            dados = calcular_diagramas_barra(barra, carregamentos)
+            eixo = p + dados["x"][:, None] * t
+            for grupo, campo in (("Esforço Normal", "N"), ("Esforço Cortante", "V"),
+                                 ("Esforço Fletor", "M")):
+                valores = np.asarray(dados[campo], float)
+                if campo == "V":
+                    valores = -valores  # Convenção de exibição do FTOOL.
+                lado = -1 if campo == "M" else 1
+                amp = max(np.max(np.abs(valores)), 1e-12)
+                vetor = lado * 0.14 * extensao * (valores/amp)[:, None] * n
+                linha_escalavel(grupo, eixo, vetor, cores[grupo], 1.8)
+                # Preenchimento translúcido, conforme os diagramas da
+                # visualização das vigas com aberturas.
+                contorno = np.vstack((eixo, (eixo + vetor)[::-1]))
+                preenchimento = Polygon(contorno, closed=True,
+                                        facecolor=cores[grupo], edgecolor='none',
+                                        alpha=0.13, zorder=2)
+                ax.add_patch(preenchimento)
+                registrar(grupo, preenchimento)
+                elementos_escalaveis[grupo].append(
+                    (preenchimento, None, eixo, vetor)
+                )
+                indices = {0, len(valores)-1}
+                if campo == "M":
+                    indices.update((int(np.argmin(valores)), int(np.argmax(valores))))
+                    for i in range(1, len(valores)-1):
+                        if (valores[i]-valores[i-1])*(valores[i+1]-valores[i]) < 0:
+                            indices.add(i)
+                for i in sorted(indices):
+                    linha_escalavel(grupo, np.stack((eixo[i], eixo[i])),
+                                   np.stack((np.zeros(2), vetor[i])), cores[grupo], .7,
+                                   f"{valores[i]:.3g}")
+
+        for no in nos:
+            xy = (no.x, no.y)
+            registrar("Geometria do modelo", ax.plot(*xy, "ko", ms=4, zorder=7)[0])
+            registrar("Geometria do modelo", ax.annotate(f"{no.num}", xy,
+                       xytext=(5, 7), textcoords="offset points", fontsize=9))
+            # Vinculações com símbolos tradicionais, como no modelo de vigas.
+            tx, ty, rz = bool(no.Tx), bool(no.Ty), bool(no.Rz)
+            tamanho = 0.025 * extensao
+            if tx and ty and rz:
+                centro = (min(n.x for n in nos) + max(n.x for n in nos)) / 2
+                lado = -1 if no.x <= centro else 1
+                registrar("Vinculações", ax.plot(
+                    [no.x, no.x], [no.y-1.4*tamanho, no.y+1.4*tamanho],
+                    color='black', lw=2.2, zorder=9)[0])
+                for k in range(8):
+                    yy = no.y + (k-3.5)*0.34*tamanho
+                    registrar("Vinculações", ax.plot(
+                        [no.x, no.x+lado*.55*tamanho],
+                        [yy, yy-.22*tamanho], color='black', lw=1, zorder=9)[0])
+            elif tx and ty:
+                registrar("Vinculações", ax.add_patch(Polygon(
+                    [(no.x,no.y),(no.x-tamanho,no.y-tamanho),
+                     (no.x+tamanho,no.y-tamanho)], closed=True,
+                    facecolor='#dddddd', edgecolor='black', zorder=9)))
+            elif ty:
+                registrar("Vinculações", ax.add_patch(Polygon(
+                    [(no.x,no.y),(no.x-tamanho,no.y-.8*tamanho),
+                     (no.x+tamanho,no.y-.8*tamanho)], closed=True,
+                    facecolor='#dddddd', edgecolor='black', zorder=9)))
+                for lado in (-.5,.5):
+                    registrar("Vinculações", ax.add_patch(Circle(
+                        (no.x+lado*tamanho,no.y-tamanho), .16*tamanho,
+                        facecolor='white', edgecolor='black', zorder=9)))
+            elif tx:
+                registrar("Vinculações", ax.add_patch(Polygon(
+                    [(no.x,no.y),(no.x-tamanho,no.y-tamanho),
+                     (no.x-tamanho,no.y+tamanho)], closed=True,
+                    facecolor='#dddddd', edgecolor='black', zorder=9)))
+
+            # Cargas nodais em coordenadas globais.
+            for componente, direcao in (("Fx", np.array([1., 0.])),
+                                        ("Fy", np.array([0., 1.]))):
+                valor = float(getattr(no, componente, 0.0))
+                if abs(valor) > 1e-12:
+                    seta_carga(xy, np.sign(valor)*direcao,
+                               .13*extensao, f"{componente}={valor:g}")
+            momento = float(getattr(no, "Mz", 0.0))
+            if abs(momento) > 1e-12:
+                desenhar_momento_escalavel(xy, momento, "Carregamentos",
+                                           cor_carga, f"Mz={momento:g}")
+
+        # Reações nos graus de liberdade vinculados (vetor global Estrutura.R).
+        # O método calcula_reacoes() deve ter sido executado antes da visualização.
+        reacoes = np.asarray(getattr(estrutura, "R", []), dtype=float).ravel()
+        if reacoes.size == 3 * len(nos):
+            for no in nos:
+                indice = 3 * (int(no.num) - 1)
+                if indice < 0 or indice + 2 >= reacoes.size:
+                    continue
+                pos = np.array([no.x, no.y], dtype=float)
+                for restrito, valor, direcao, nome in (
+                    (no.Tx, reacoes[indice], np.array([1., 0.]), "Rx"),
+                    (no.Ty, reacoes[indice + 1], np.array([0., 1.]), "Ry"),
+                ):
+                    if restrito and abs(valor) > 1e-10:
+                        seta_carga(pos, np.sign(valor) * direcao,
+                                   .11 * extensao, f"{nome}={valor:.3g}",
+                                   grupo="Reações", cor=cor_reacao)
+                momento_r = reacoes[indice + 2]
+                if no.Rz and abs(momento_r) > 1e-10:
+                    desenhar_momento_escalavel(pos, momento_r, "Reações",
+                                               cor_reacao, f"Rz={momento_r:.3g}")
+
+        # Cargas distribuídas: flechas com pontas na barra e linha de origem.
+        for carga in carregamentos:
+            barra = carga.barra
+            p = np.array([barra.noi.x, barra.noi.y], float)
+            q = np.array([barra.noj.x, barra.noj.y], float)
+            L = np.linalg.norm(q-p)
+            t = (q-p)/L
+            n = np.array([-t[1], t[0]])
+            if hasattr(carga, "lw"):
+                xs = np.linspace(float(carga.a), float(carga.a+carga.lw),
+                                 max(3, int(carga.lw / max(extensao*.035, 1e-9))+1))
+                valores = [float(carga.w1)+(float(carga.w2)-float(carga.w1))*
+                           (x-carga.a)/carga.lw for x in xs]
+                maior = max(max(abs(v) for v in valores), 1e-12)
+                origens = []
+                for x, w in zip(xs, valores):
+                    pos = p+x*t
+                    direcao = -np.sign(w)*n
+                    comprimento = .055*extensao*abs(w)/maior
+                    if comprimento > 1e-10:
+                        seta_carga(pos, direcao, comprimento)
+                        origens.append((pos, direcao, comprimento))
+                # Linha superior que liga as origens das flechas.
+                if len(origens) >= 2:
+                    posicoes = np.array([pos-compr*direcao for pos,direcao,compr in origens])
+                    base = np.array([pos for pos,_,_ in origens])
+                    linha_escalavel("Carregamentos", base, posicoes-base,
+                                    cor_carga, .9)
+                meio = p+(float(carga.a)+float(carga.lw)/2)*t
+                # Posicionar o valor na linha de origem das flechas, não
+                # em uma distância fixa em pontos da geometria.
+                if origens:
+                    indice_meio = len(origens) // 2
+                    pos_m, direcao_m, comprimento_m = origens[indice_meio]
+                    base_rotulo = np.asarray(pos_m, float)
+                    vetor_rotulo = -comprimento_m * np.asarray(direcao_m, float)
+                    pos_rotulo = base_rotulo + escalas["Carregamentos"] * vetor_rotulo
+                    texto_rotulo = (f"{float(carga.w1):g}"
+                                    if abs(carga.w1-carga.w2)<1e-12
+                                    else f"{carga.w1:g}–{carga.w2:g}")
+                    rotulo = registrar("Carregamentos", ax.annotate(
+                        texto_rotulo, pos_rotulo,
+                        xytext=(0, 5), textcoords='offset points',
+                        color=cor_carga, fontsize=8, ha='center'))
+                    elementos_escalaveis["Carregamentos"].append(
+                        (None, rotulo, base_rotulo[None, :], vetor_rotulo[None, :]))
+            else:
+                pos = p+float(carga.a)*t
+                # Componentes locais: Py positivo para baixo no exemplo.
+                for valor, direcao, nome in ((float(carga.Px), t, 'Px'),
+                                             (float(carga.Py), -n, 'Py')):
+                    if abs(valor) > 1e-12:
+                        seta_carga(pos, np.sign(valor)*direcao,
+                                   .14*extensao, f"{nome}={valor:g}")
+
+        # Deformada com interpolação de Hermite, sem modificar o modelo.
+        max_deslocamento = float(np.max(np.hypot(u[0::3], u[1::3])))
+        fator_deformada = (.06 * extensao / max_deslocamento
+                           if max_deslocamento > 1e-14 else 1.0)
+        deformadas = []
+        for barra in barras:
+            pi = np.array([barra.noi.x, barra.noi.y], float)
+            pj = np.array([barra.noj.x, barra.noj.y], float)
+            delta = pj - pi
+            comprimento = float(np.linalg.norm(delta))
+            c, sn = delta / comprimento
+            T = np.array([[c, sn, 0], [-sn, c, 0], [0, 0, 1]])
+            ui = T @ u[3*(barra.noi.num-1):3*barra.noi.num]
+            uj = T @ u[3*(barra.noj.num-1):3*barra.noj.num]
+            r = np.linspace(0, 1, 81)
+            axial = (1-r)*ui[0] + r*uj[0]
+            transv = ((1-3*r*r+2*r**3)*ui[1]
+                      + comprimento*(r-2*r*r+r**3)*ui[2]
+                      + (3*r*r-2*r**3)*uj[1]
+                      + comprimento*(-r*r+r**3)*uj[2])
+            original = pi + (comprimento*r)[:, None] * np.array([c, sn])
+            desloc = axial[:, None]*np.array([c, sn]) + transv[:, None]*np.array([-sn, c])
+            pontos = original + fator_deformada*desloc
+            linha, = ax.plot(pontos[:, 0], pontos[:, 1], color="#1769aa",
+                             lw=2, zorder=6)
+            registrar("Deformada", linha)
+            deformadas.append((linha, original, desloc))
+
+        # Destaque do nó selecionado, independente dos símbolos de vinculação.
+        marcador_no_selecionado, = ax.plot([], [], "o", ms=10,
+            markerfacecolor="red", markeredgecolor="darkred",
+            markeredgewidth=1.5, zorder=30, visible=False)
+
+        # Clique próximo a um nó: deslocamentos no canto inferior esquerdo.
+        painel_no = ax.text(.015, .025, "Clique em um nó para ver seus deslocamentos",
+                            transform=ax.transAxes, fontsize=9, va="bottom",
+                            ha="left", color="0.2",
+                            bbox=dict(facecolor="white", alpha=.85, edgecolor="0.75"),
+                            zorder=20)
+
+        # Painel único de opções à direita.
+        nomes = list(grupos)
+        check_ax = fig.add_axes([0.79, 0.57, 0.20, 0.30])
+        checks = CheckButtons(
+            check_ax, nomes, [True, True, True, False, False, False, False, False],
+            frame_props={"s": 12**2, "linewidth": 1.4},
+            check_props={"s": 12**2, "linewidth": 1.8},
+        )
+        check_ax.set_title("Exibir", fontsize=10, loc="left")
+        for spine in check_ax.spines.values():
+            spine.set_visible(False)
+        for nome in nomes[3:]:
+            for artista in grupos[nome]:
+                artista.set_visible(False)
+
+        def alternar(nome):
+            itens = grupos[nome]
+            if itens:
+                novo = not itens[0].get_visible()
+                for item in itens:
+                    item.set_visible(novo)
+            fig.canvas.draw_idle()
+        checks.on_clicked(alternar)
+
+        sliders = []
+        rotulos_escala = {"Carregamentos": "carregamentos",
+                         "Reações": "reações",
+                         "Deformada": "deformada",
+                         "Esforço Normal": "esforço normal",
+                         "Esforço Cortante": "esforço cortante",
+                         "Esforço Fletor": "momento fletor"}
+        for j, grupo in enumerate(escalas):
+            y_slider = 0.455 - j * 0.071
+            fig.text(0.795, y_slider + 0.037, rotulos_escala[grupo],
+                     fontsize=9, ha="left", va="center")
+            sx = fig.add_axes([0.805, y_slider, 0.15, 0.020])
+            controle = Slider(sx, "", 0.0, 5.0, valinit=1.0, valfmt="%.2f")
+            def atualizar(valor, grupo=grupo):
+                escalas[grupo] = valor
+                for art, rotulo, base, vetor in elementos_escalaveis[grupo]:
+                    pts = base + valor * vetor
+                    if isinstance(art, Polygon):
+                        art.set_xy(np.vstack((base, pts[::-1])))
+                    elif art is not None:
+                        art.set_data(pts[:, 0], pts[:, 1])
+                    if rotulo is not None:
+                        rotulo.xy = tuple(pts[-1])
+                if grupo in setas_escalaveis:
+                    for seta, rotulo, pos, vetor in setas_escalaveis[grupo]:
+                        inicio = pos if grupo == "Reações" else pos - valor * vetor
+                        fim = pos + valor * vetor if grupo == "Reações" else pos
+                        seta.set_positions(inicio, fim)
+                        if rotulo is not None:
+                            rotulo.xy = tuple(fim if grupo == "Reações" else inicio)
+                if grupo in momentos_escalaveis:
+                    for linha, seta, centro, curva, tangente, raio, rotulo, indice_rotulo in momentos_escalaveis[grupo]:
+                        pontos = centro + valor * curva
+                        linha.set_data(pontos[:, 0], pontos[:, 1])
+                        ponta = pontos[-1]
+                        seta.set_positions(ponta - valor*.35*raio*tangente, ponta)
+                        rotulo.xy = tuple(pontos[indice_rotulo])
+                if grupo == "Deformada":
+                    for linha, original, desloc in deformadas:
+                        pontos = original + valor*fator_deformada*desloc
+                        linha.set_data(pontos[:, 0], pontos[:, 1])
+                fig.canvas.draw_idle()
+            controle.on_changed(atualizar)
+            sliders.append(controle)
+
+        # Zoom ancorado no cursor (scroll) e deslocamento com botão esquerdo.
+        # O pan do toolbar do Matplotlib continua disponível normalmente.
+        estado_pan = {"inicio": None, "xlim": None, "ylim": None}
+        def zoom_scroll(event):
+            if event.inaxes is not ax or event.xdata is None or event.ydata is None:
+                return
+            fator = 1 / 1.2 if event.button == "up" else 1.2
+            x0, x1 = ax.get_xlim()
+            y0, y1 = ax.get_ylim()
+            cx, cy = event.xdata, event.ydata
+            ax.set_xlim(cx + (x0-cx)*fator, cx + (x1-cx)*fator)
+            ax.set_ylim(cy + (y0-cy)*fator, cy + (y1-cy)*fator)
+            fig.canvas.draw_idle()
+
+        def iniciar_pan(event):
+            if event.inaxes is ax and event.button == 1 and event.xdata is not None:
+                toolbar = getattr(fig.canvas, "toolbar", None)
+                if toolbar is not None and getattr(toolbar, "mode", ""):
+                    return
+                if any(np.hypot(*(ax.transData.transform((no.x, no.y)) -
+                                   np.array([event.x, event.y]))) <= 12 for no in nos):
+                    return
+                estado_pan.update(inicio=(event.x, event.y),
+                                  xlim=ax.get_xlim(), ylim=ax.get_ylim())
+
+        def mover_pan(event):
+            if estado_pan["inicio"] is None or event.inaxes is not ax:
+                return
+            if event.xdata is None or event.ydata is None:
+                return
+            dx = (event.x - estado_pan["inicio"][0]) * (estado_pan["xlim"][1] - estado_pan["xlim"][0]) / ax.bbox.width
+            dy = (event.y - estado_pan["inicio"][1]) * (estado_pan["ylim"][1] - estado_pan["ylim"][0]) / ax.bbox.height
+            ax.set_xlim(*(v-dx for v in estado_pan["xlim"]))
+            ax.set_ylim(*(v-dy for v in estado_pan["ylim"]))
+            fig.canvas.draw_idle()
+
+        def finalizar_pan(event):
+            estado_pan["inicio"] = None
+
+        def selecionar_no(event):
+            if event.inaxes is not ax or event.button != 1:
+                return
+            toolbar = getattr(fig.canvas, "toolbar", None)
+            if toolbar is not None and getattr(toolbar, "mode", ""):
+                return
+            if event.x is None or event.y is None:
+                return
+            candidatos = []
+            for no in nos:
+                px, py = ax.transData.transform((no.x, no.y))
+                candidatos.append((np.hypot(px-event.x, py-event.y), no))
+            distancia, no = min(candidatos, key=lambda item: item[0])
+            if distancia > 12:
+                return
+            i = 3*(no.num-1)
+            painel_no.set_text(
+                f"Nó {no.num}   ux = {u[i]:.3e}   uy = {u[i+1]:.3e}   "
+                f"θz = {u[i+2]:.3e} rad")
+            marcador_no_selecionado.set_data([no.x], [no.y])
+            marcador_no_selecionado.set_visible(True)
+            fig.canvas.draw_idle()
+
+        fig.canvas.mpl_connect("button_press_event", selecionar_no)
+        fig.canvas.mpl_connect("scroll_event", zoom_scroll)
+        fig.canvas.mpl_connect("button_press_event", iniciar_pan)
+        fig.canvas.mpl_connect("motion_notify_event", mover_pan)
+        fig.canvas.mpl_connect("button_release_event", finalizar_pan)
+
+        ax.margins(0.20)
+        fig._controles_analise = (checks, *sliders)
+        if mostrar:
+            plt.show()
+        return fig, ax
+
     @staticmethod
     def _trechos_geometricos(barras):
         """
