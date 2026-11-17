@@ -103,3 +103,10 @@ print_vetor(barra3.fl)
 print("reacoes")
 portico.calcula_reacoes()
 print_vetor(portico.R)
+
+# Visualização interativa da análise estrutural (sem alterar os cálculos).
+from src.visualizacao import Visualizacao
+
+Visualizacao(portico).desenhar_analise_estrutural(
+    carregamentos=[carregamento1]
+)
