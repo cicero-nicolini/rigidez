@@ -149,7 +149,7 @@ class Visualizacao:
         """
         import numpy as np
         import matplotlib.pyplot as plt
-        from matplotlib.widgets import CheckButtons, Slider
+        from matplotlib.widgets import CheckButtons, Slider, Button
         from matplotlib.patches import FancyArrowPatch, Polygon, Circle, Arc
         from .diagramas_esforcos import calcular_diagramas_barra
 
@@ -466,9 +466,10 @@ class Visualizacao:
 
         # Painel único de opções à direita.
         nomes = list(grupos)
-        check_ax = fig.add_axes([0.79, 0.57, 0.20, 0.30])
+        check_ax = fig.add_axes([0.79, 0.57, 0.20, 0.34])
         checks = CheckButtons(
-            check_ax, nomes, [True, True, True, False, False, False, False, False],
+            check_ax, nomes + ["Grid"],
+            [True, True, True, False, False, False, False, False, True],
             frame_props={"s": 12**2, "linewidth": 1.4},
             check_props={"s": 12**2, "linewidth": 1.8},
         )
@@ -480,6 +481,10 @@ class Visualizacao:
                 artista.set_visible(False)
 
         def alternar(nome):
+            if nome == "Grid":
+                ax.grid(checks.get_status()[-1])
+                fig.canvas.draw_idle()
+                return
             itens = grupos[nome]
             if itens:
                 novo = not itens[0].get_visible()
@@ -496,7 +501,7 @@ class Visualizacao:
                          "Esforço Cortante": "esforço cortante",
                          "Esforço Fletor": "momento fletor"}
         for j, grupo in enumerate(escalas):
-            y_slider = 0.455 - j * 0.071
+            y_slider = 0.475 - j * 0.060
             fig.text(0.795, y_slider + 0.037, rotulos_escala[grupo],
                      fontsize=9, ha="left", va="center")
             sx = fig.add_axes([0.805, y_slider, 0.15, 0.020])
@@ -532,6 +537,74 @@ class Visualizacao:
                 fig.canvas.draw_idle()
             controle.on_changed(atualizar)
             sliders.append(controle)
+
+        # Escala independente dos textos da plotagem, inclusive dos ocultos.
+        # Preserva as diferenças entre os tamanhos originais das fontes.
+        textos_plotagem = [(texto, texto.get_fontsize()) for texto in ax.texts]
+        textos_plotagem.extend((texto, texto.get_fontsize()) for texto in
+                               (ax.xaxis.label, ax.yaxis.label))
+        tamanho_ticks_x = ax.xaxis.get_major_ticks()[0].label1.get_fontsize()
+        tamanho_ticks_y = ax.yaxis.get_major_ticks()[0].label1.get_fontsize()
+        fig.text(0.795, 0.152, "textos", fontsize=9, ha="left", va="center")
+        area_textos = fig.add_axes([0.805, 0.115, 0.15, 0.020])
+        controle_textos = Slider(area_textos, "", 0.5, 3.0,
+                                  valinit=1.0, valfmt="%.2f")
+
+        def atualizar_textos(valor):
+            """Ajusta as fontes sem modificar a geometria ou os diagramas."""
+            for texto, tamanho_original in textos_plotagem:
+                texto.set_fontsize(valor * tamanho_original)
+            ax.tick_params(axis="x", labelsize=valor * tamanho_ticks_x)
+            ax.tick_params(axis="y", labelsize=valor * tamanho_ticks_y)
+            fig.canvas.draw_idle()
+
+        controle_textos.on_changed(atualizar_textos)
+        sliders.append(controle_textos)
+
+        # Exporta somente o eixo estrutural, sem os controles interativos.
+        area_exportar = fig.add_axes([0.805, 0.025, 0.15, 0.04])
+        botao_svg = Button(area_exportar, "Exportar SVG")
+
+        def exportar_svg(event):
+            """Salva a vista atual da análise estrutural em formato vetorial."""
+            from tkinter import Tk, filedialog, messagebox
+            import matplotlib as mpl
+
+            janela = Tk()
+            janela.withdraw()
+            try:
+                caminho = filedialog.asksaveasfilename(
+                    parent=janela, title="Exportar análise estrutural",
+                    defaultextension=".svg", filetypes=[("SVG", "*.svg")],
+                    initialfile="analise_estrutural.svg")
+                if not caminho:
+                    return
+
+                # Oculta os controles e o aviso de seleção de nós na exportação.
+                artistas = [eixo for eixo in fig.axes if eixo is not ax]
+                artistas += list(fig.texts)
+                if not marcador_no_selecionado.get_visible():
+                    artistas.append(painel_no)
+                estados = [artista.get_visible() for artista in artistas]
+                try:
+                    for artista in artistas:
+                        artista.set_visible(False)
+                    fig.canvas.draw()
+                    renderer = fig.canvas.get_renderer()
+                    caixa = ax.get_tightbbox(renderer).transformed(
+                        fig.dpi_scale_trans.inverted()).padded(0.1)
+                    with mpl.rc_context({"svg.fonttype": "none"}):
+                        fig.savefig(caminho, format="svg", bbox_inches=caixa)
+                finally:
+                    for artista, visivel in zip(artistas, estados):
+                        artista.set_visible(visivel)
+                    fig.canvas.draw_idle()
+            except Exception as erro:
+                messagebox.showerror("Exportar SVG", str(erro), parent=janela)
+            finally:
+                janela.destroy()
+
+        botao_svg.on_clicked(exportar_svg)
 
         # Zoom ancorado no cursor (scroll) e deslocamento com botão esquerdo.
         # O pan do toolbar do Matplotlib continua disponível normalmente.
@@ -602,7 +675,7 @@ class Visualizacao:
         fig.canvas.mpl_connect("button_release_event", finalizar_pan)
 
         ax.margins(0.20)
-        fig._controles_analise = (checks, *sliders)
+        fig._controles_analise = (checks, *sliders, botao_svg)
         if mostrar:
             plt.show()
         return fig, ax
