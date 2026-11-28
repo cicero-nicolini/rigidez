@@ -139,6 +139,62 @@ class Visualizacao:
             momentos_escalaveis[grupo].append((linha, seta, pos, curva,
                                                 tangente, raio, rotulo, indice_rotulo))
 
+        self._desenhar_barras_analise(estrutura, carregamentos, ax, extensao, registrar, linha_escalavel, elementos_escalaveis)
+        self._desenhar_nos_analise(nos, ax, extensao, registrar, seta_carga, desenhar_momento_escalavel, cor_carga)
+        self._desenhar_reacoes_analise(estrutura, nos, extensao, seta_carga, desenhar_momento_escalavel, cor_reacao)
+        self._desenhar_carregamentos_analise(carregamentos, ax, extensao, seta_carga, linha_escalavel, cor_carga, escalas, registrar, elementos_escalaveis)
+        # Deformada obtida da análise estrutural.
+        max_deslocamento = float(np.max(np.hypot(u[0::3], u[1::3])))
+        fator_deformada = (.06 * extensao / max_deslocamento
+                           if max_deslocamento > 1e-14 else 1.0)
+        deformadas = []
+        for barra, original, desloc in estrutura.calcula_deformada(81):
+            pontos = self._coordenadas_deformadas(original, desloc, fator_deformada)
+            linha, = ax.plot(pontos[:, 0], pontos[:, 1], color="#1769aa",
+                             lw=2, zorder=6)
+            registrar("Deformada", linha)
+            deformadas.append((linha, original, desloc))
+
+        # Destaque do nó selecionado, independente dos símbolos de vinculação.
+        marcador_no_selecionado, = ax.plot([], [], "o", ms=10,
+            markerfacecolor="red", markeredgecolor="darkred",
+            markeredgewidth=1.5, zorder=30, visible=False)
+
+        # Clique próximo a um nó: deslocamentos no canto inferior esquerdo.
+        painel_no = ax.text(.015, .025, "Clique em um nó para ver seus deslocamentos",
+                            transform=ax.transAxes, fontsize=9, va="bottom",
+                            ha="left", color="0.2",
+                            bbox=dict(facecolor="white", alpha=.85, edgecolor="0.75"),
+                            zorder=20)
+
+        checks, sliders, botao_svg = self._criar_controles_analise(fig, ax, grupos, escalas, elementos_escalaveis, setas_escalaveis, momentos_escalaveis, deformadas, fator_deformada, marcador_no_selecionado, painel_no)
+
+        self._configurar_interacao_analise(fig, ax, nos, u, marcador_no_selecionado, painel_no)
+
+        ax.margins(0.20)
+        fig._controles_analise = (checks, *sliders, botao_svg)
+        if mostrar:
+            plt.show()
+        return fig, ax
+
+    def _desenhar_barras_analise(self, estrutura, carregamentos, ax, extensao, registrar, linha_escalavel, elementos_escalaveis) -> None:
+        """
+        Desenha barras e diagramas de solicitações da análise.
+
+        Args:
+
+            estrutura: parâmetro do procedimento gráfico
+            carregamentos: parâmetro do procedimento gráfico
+            ax: parâmetro do procedimento gráfico
+            extensao: parâmetro do procedimento gráfico
+            registrar: parâmetro do procedimento gráfico
+            linha_escalavel: parâmetro do procedimento gráfico
+            elementos_escalaveis: parâmetro do procedimento gráfico
+        """
+
+        import numpy as np
+        from matplotlib.patches import Polygon
+
         # Geometria, numeração e diagramas de esforços.
         cores = {"Esforço Normal": "#7c3aed", "Esforço Cortante": "#e07b18",
                  "Esforço Fletor": "#16803c"}
@@ -187,6 +243,26 @@ class Visualizacao:
                     linha_escalavel(grupo, np.stack((eixo[i], eixo[i])),
                                    np.stack((np.zeros(2), vetor[i])), cores[grupo], .7,
                                    f"{valores[i]:.3g}")
+
+
+
+    def _desenhar_nos_analise(self, nos, ax, extensao, registrar, seta_carga, desenhar_momento_escalavel, cor_carga) -> None:
+        """
+        Desenha nós, vinculações e cargas nodais.
+
+        Args:
+
+            nos: parâmetro do procedimento gráfico
+            ax: parâmetro do procedimento gráfico
+            extensao: parâmetro do procedimento gráfico
+            registrar: parâmetro do procedimento gráfico
+            seta_carga: parâmetro do procedimento gráfico
+            desenhar_momento_escalavel: parâmetro do procedimento gráfico
+            cor_carga: parâmetro do procedimento gráfico
+        """
+
+        import numpy as np
+        from matplotlib.patches import Polygon, Circle
 
         for no in nos:
             xy = (no.x, no.y)
@@ -239,6 +315,24 @@ class Visualizacao:
                 desenhar_momento_escalavel(xy, momento, "Carregamentos",
                                            cor_carga, f"Mz={momento:g}")
 
+
+
+    def _desenhar_reacoes_analise(self, estrutura, nos, extensao, seta_carga, desenhar_momento_escalavel, cor_reacao) -> None:
+        """
+        Desenha as reações de apoio.
+
+        Args:
+
+            estrutura: parâmetro do procedimento gráfico
+            nos: parâmetro do procedimento gráfico
+            extensao: parâmetro do procedimento gráfico
+            seta_carga: parâmetro do procedimento gráfico
+            desenhar_momento_escalavel: parâmetro do procedimento gráfico
+            cor_reacao: parâmetro do procedimento gráfico
+        """
+
+        import numpy as np
+
         # Reações nos graus de liberdade vinculados (vetor global Estrutura.R).
         # O método calcula_reacoes() deve ter sido executado antes da visualização.
         reacoes = np.asarray(getattr(estrutura, "R", []), dtype=float).ravel()
@@ -260,6 +354,27 @@ class Visualizacao:
                 if no.Rz and abs(momento_r) > 1e-10:
                     desenhar_momento_escalavel(pos, momento_r, "Reações",
                                                cor_reacao, f"Rz={momento_r:.3g}")
+
+
+
+    def _desenhar_carregamentos_analise(self, carregamentos, ax, extensao, seta_carga, linha_escalavel, cor_carga, escalas, registrar, elementos_escalaveis) -> None:
+        """
+        Desenha carregamentos aplicados às barras.
+
+        Args:
+
+            carregamentos: parâmetro do procedimento gráfico
+            ax: parâmetro do procedimento gráfico
+            extensao: parâmetro do procedimento gráfico
+            seta_carga: parâmetro do procedimento gráfico
+            linha_escalavel: parâmetro do procedimento gráfico
+            cor_carga: parâmetro do procedimento gráfico
+            escalas: parâmetro do procedimento gráfico
+            registrar: parâmetro do procedimento gráfico
+            elementos_escalaveis: parâmetro do procedimento gráfico
+        """
+
+        import numpy as np
 
         # Cargas distribuídas: flechas com pontas na barra e linha de origem.
         for carga in carregamentos:
@@ -316,29 +431,30 @@ class Visualizacao:
                         seta_carga(pos, np.sign(valor)*direcao,
                                    .14*extensao, f"{nome}={valor:g}")
 
-        # Deformada obtida da análise estrutural.
-        max_deslocamento = float(np.max(np.hypot(u[0::3], u[1::3])))
-        fator_deformada = (.06 * extensao / max_deslocamento
-                           if max_deslocamento > 1e-14 else 1.0)
-        deformadas = []
-        for barra, original, desloc in estrutura.calcula_deformada(81):
-            pontos = original + fator_deformada*desloc
-            linha, = ax.plot(pontos[:, 0], pontos[:, 1], color="#1769aa",
-                             lw=2, zorder=6)
-            registrar("Deformada", linha)
-            deformadas.append((linha, original, desloc))
 
-        # Destaque do nó selecionado, independente dos símbolos de vinculação.
-        marcador_no_selecionado, = ax.plot([], [], "o", ms=10,
-            markerfacecolor="red", markeredgecolor="darkred",
-            markeredgewidth=1.5, zorder=30, visible=False)
 
-        # Clique próximo a um nó: deslocamentos no canto inferior esquerdo.
-        painel_no = ax.text(.015, .025, "Clique em um nó para ver seus deslocamentos",
-                            transform=ax.transAxes, fontsize=9, va="bottom",
-                            ha="left", color="0.2",
-                            bbox=dict(facecolor="white", alpha=.85, edgecolor="0.75"),
-                            zorder=20)
+    def _criar_controles_analise(self, fig, ax, grupos, escalas, elementos_escalaveis, setas_escalaveis, momentos_escalaveis, deformadas, fator_deformada, marcador_no_selecionado, painel_no) -> tuple:
+        """
+        Cria os controles de visibilidade, escala e exportação.
+
+        Args:
+
+            fig: parâmetro do procedimento gráfico
+            ax: parâmetro do procedimento gráfico
+            grupos: parâmetro do procedimento gráfico
+            escalas: parâmetro do procedimento gráfico
+            elementos_escalaveis: parâmetro do procedimento gráfico
+            setas_escalaveis: parâmetro do procedimento gráfico
+            momentos_escalaveis: parâmetro do procedimento gráfico
+            deformadas: parâmetro do procedimento gráfico
+            fator_deformada: parâmetro do procedimento gráfico
+            marcador_no_selecionado: parâmetro do procedimento gráfico
+            painel_no: parâmetro do procedimento gráfico
+        """
+
+        import numpy as np
+        from matplotlib.widgets import CheckButtons, Slider, Button
+        from matplotlib.patches import Polygon
 
         # Painel único de opções à direita.
         nomes = list(grupos)
@@ -408,7 +524,7 @@ class Visualizacao:
                         rotulo.xy = tuple(pontos[indice_rotulo])
                 if grupo == "Deformada":
                     for linha, original, desloc in deformadas:
-                        pontos = original + valor*fator_deformada*desloc
+                        pontos = self._coordenadas_deformadas(original, desloc, valor*fator_deformada)
                         linha.set_data(pontos[:, 0], pontos[:, 1])
                 fig.canvas.draw_idle()
             controle.on_changed(atualizar)
@@ -482,6 +598,25 @@ class Visualizacao:
 
         botao_svg.on_clicked(exportar_svg)
 
+        return checks, sliders, botao_svg
+
+
+    def _configurar_interacao_analise(self, fig, ax, nos, u, marcador_no_selecionado, painel_no) -> None:
+        """
+        Configura a navegação e seleção de nós.
+
+        Args:
+
+            fig: parâmetro do procedimento gráfico
+            ax: parâmetro do procedimento gráfico
+            nos: parâmetro do procedimento gráfico
+            u: parâmetro do procedimento gráfico
+            marcador_no_selecionado: parâmetro do procedimento gráfico
+            painel_no: parâmetro do procedimento gráfico
+        """
+
+        import numpy as np
+
         # Zoom ancorado no cursor (scroll) e deslocamento com botão esquerdo.
         # O pan do toolbar do Matplotlib continua disponível normalmente.
         estado_pan = {"inicio": None, "xlim": None, "ylim": None}
@@ -550,11 +685,318 @@ class Visualizacao:
         fig.canvas.mpl_connect("motion_notify_event", mover_pan)
         fig.canvas.mpl_connect("button_release_event", finalizar_pan)
 
-        ax.margins(0.20)
-        fig._controles_analise = (checks, *sliders, botao_svg)
-        if mostrar:
-            plt.show()
-        return fig, ax
+
+
+    def _criar_controles_viga(self, fig, ax, grupos, estados, nomes_internos_checkbox, limites, m, mostrar_controles_escala, escala_momento, atualizar_momento, diagramas_nv, diagramas_armadura, linhas_deformada, atualizar_deformada, escala_auto, nos, deslocamento_no, escalas_iniciais, atualizar_faixas_n1_n2, artistas_n1_n2, artistas_banzos, artistas_alertas_apoios) -> None:
+        """
+        Cria os controles interativos da viga e do detalhamento.
+
+        Args:
+
+            fig: parâmetro do procedimento gráfico
+            ax: parâmetro do procedimento gráfico
+            grupos: parâmetro do procedimento gráfico
+            estados: parâmetro do procedimento gráfico
+            nomes_internos_checkbox: parâmetro do procedimento gráfico
+            limites: parâmetro do procedimento gráfico
+            m: parâmetro do procedimento gráfico
+            mostrar_controles_escala: parâmetro do procedimento gráfico
+            escala_momento: parâmetro do procedimento gráfico
+            atualizar_momento: parâmetro do procedimento gráfico
+            diagramas_nv: parâmetro do procedimento gráfico
+            diagramas_armadura: parâmetro do procedimento gráfico
+            linhas_deformada: parâmetro do procedimento gráfico
+            atualizar_deformada: parâmetro do procedimento gráfico
+            escala_auto: parâmetro do procedimento gráfico
+            nos: parâmetro do procedimento gráfico
+            deslocamento_no: parâmetro do procedimento gráfico
+            escalas_iniciais: parâmetro do procedimento gráfico
+            atualizar_faixas_n1_n2: parâmetro do procedimento gráfico
+            artistas_n1_n2: parâmetro do procedimento gráfico
+            artistas_banzos: parâmetro do procedimento gráfico
+            artistas_alertas_apoios: parâmetro do procedimento gráfico
+        """
+
+        import numpy as np
+        from matplotlib.widgets import CheckButtons, Button, Slider
+
+        area = fig.add_axes([.79, .34, .20, .63])
+        area.set_title('Exibir', fontsize=10, loc='left')
+        nomes = [
+            'Geometria da viga', 'Modelo estrutural', 'Nós', 'Números dos nós',
+            'Números das barras', 'Apoios', 'Cargas distribuídas',
+            'Forças nodais', 'Momentos nodais', 'Deformada',
+            'Momento fletor', 'Diagrama decalado',
+            'Esforço Normal', 'Esforço cortante',
+            'Diagrama As longitudinal', 'Diagrama As transversal',
+            'Armadura longitudinal', 'Armadura transversal', 'Valores',
+        ]
+        nome_interno = nomes_internos_checkbox
+        # Ícones quadrados de 12 pt (Matplotlib >= 3.7).
+        # O parâmetro `s` corresponde à área em pontos quadrados.
+        checks = CheckButtons(
+            area, nomes, [estados[nome_interno.get(n, n)] for n in nomes],
+            frame_props={'s': 12**2, 'linewidth': 1.4},
+            check_props={'s': 12**2, 'linewidth': 1.8},
+        )
+        for spine in area.spines.values():
+            spine.set_visible(False)
+
+        def atualizar_valores():
+            """Exibe valores somente dos diagramas ativos."""
+            mostrar = estados['Valores']
+            momento_ativo = mostrar and estados['Momento fletor']
+            for artista in grupos['Valores dos momentos']:
+                artista.set_visible(momento_ativo)
+            # Os extremos por trecho já fazem parte dos valores comuns;
+            # não duplicar os rótulos globais do momento.
+            for artista in grupos['Extremos do momento']:
+                artista.set_visible(False)
+            for tipo, info in diagramas_nv.items():
+                ativo = mostrar and estados[tipo]
+                for artista in grupos[info['nome_valores']]:
+                    artista.set_visible(ativo)
+            for tipo, info in diagramas_armadura.items():
+                ativo = mostrar and estados[tipo]
+                for artista in grupos[info['nome_valores']]:
+                    artista.set_visible(ativo)
+
+        # Associa cada diagrama ao eixo do seu controle de escala.
+        # Os eixos são criados adiante, mas o callback já pode consultar
+        # este dicionário quando o usuário alternar um checkbox.
+        eixos_escalas = {}
+        controles_escalonamento = []
+
+        def atualizar_visibilidade_escalas():
+            """Mostra apenas as escalas dos diagramas habilitados."""
+            for nome_diagrama, eixo_escala in eixos_escalas.items():
+                eixo_escala.set_visible(bool(estados[nome_diagrama]))
+
+        def atualizar_visibilidade_escalonamento():
+            """Mostra os controles N1/N2 apenas com a armadura longitudinal."""
+            visivel = bool(estados['Detalhamento longitudinal'])
+            for artista in controles_escalonamento:
+                artista.set_visible(visivel)
+
+        def alternar(rotulo):
+            nome = nome_interno.get(rotulo, rotulo)
+            estados[nome] = not estados[nome]
+            if nome != 'Valores':
+                for artista in grupos[nome]:
+                    artista.set_visible(estados[nome])
+            # Ao ativar diagramas, oculta as cargas para evitar sobreposição.
+            if (nome in ('Momento fletor', 'Diagrama decalado',
+                         'Esforço normal',
+                         'Esforço cortante', 'Armadura longitudinal',
+                         'Armadura transversal') and estados[nome]
+                    and estados['Cargas distribuídas']):
+                checks.set_active(nomes.index('Cargas distribuídas'))
+            atualizar_valores()
+            atualizar_visibilidade_escalas()
+            atualizar_visibilidade_escalonamento()
+            fig.canvas.draw_idle()
+
+        checks.on_clicked(alternar)
+        # Os artistas de rótulos são criados ocultos. Ao reconstruir a
+        # figura após trocar a combinação de esforços, restaura também
+        # sua visibilidade conforme os checkboxes preservados, sem
+        # precisar clicar novamente em "Valores".
+        atualizar_valores()
+        area_reset = fig.add_axes([.80, .265, .17, .055])
+        reset = Button(area_reset, 'Restaurar vista')
+
+        def restaurar(_):
+            ax.set_xlim(*limites[0])
+            ax.set_ylim(*limites[1])
+            fig.canvas.draw_idle()
+
+        reset.on_clicked(restaurar)
+
+        self._controles = [checks, reset]
+
+        # ------------------------------------------------------------
+        # ESCALONAMENTO N1/N2 — CONTROLES NA ÁREA DE PLOTAGEM
+        # ------------------------------------------------------------
+        # Os sliders ficam fixos no canto superior esquerdo dos eixos.
+        # Suas coordenadas são relativas à área de plotagem, de modo que
+        # o posicionamento não depende dos limites ou do zoom da viga.
+        if hasattr(m, 'ap1') and hasattr(m, 'l') and hasattr(m, 'h'):
+            area_n1 = ax.inset_axes(
+                [.105, .925, .225, .025],
+                transform=ax.transAxes,
+                zorder=21,
+            )
+            area_n2 = ax.inset_axes(
+                [.105, .865, .225, .025],
+                transform=ax.transAxes,
+                zorder=21,
+            )
+
+            for area_escalonamento in (area_n1, area_n2):
+                area_escalonamento.set_facecolor((1, 1, 1, .92))
+
+            controle_n1 = Slider(
+                area_n1, 'N1', valmin=0, valmax=3,
+                valinit=self.niveis_n1, valstep=1, valfmt='%d',
+            )
+            controle_n2 = Slider(
+                area_n2, 'N2', valmin=0, valmax=3,
+                valinit=self.niveis_n2, valstep=1, valfmt='%d',
+            )
+
+            titulo_escalonamento = ax.text(
+                .015, .985, 'Escalonamento N1 / N2',
+                transform=ax.transAxes, ha='left', va='top',
+                fontsize=9, fontweight='bold', zorder=22,
+                bbox=dict(facecolor='white', edgecolor='none', alpha=.85),
+            )
+
+            def alterar_escalonamento(_):
+                """Atualiza as faixas de armadura após alterar um nível."""
+                self.niveis_n1 = int(controle_n1.val)
+                self.niveis_n2 = int(controle_n2.val)
+
+                atualizar_faixas_n1_n2()
+
+                visivel = estados['Detalhamento longitudinal']
+                for artista in (*artistas_n1_n2, *artistas_banzos,
+                                *artistas_alertas_apoios):
+                    artista.set_visible(visivel)
+
+                fig.canvas.draw_idle()
+
+            controle_n1.on_changed(alterar_escalonamento)
+            controle_n2.on_changed(alterar_escalonamento)
+            self._controles.extend((controle_n1, controle_n2))
+            controles_escalonamento.extend((area_n1, area_n2, titulo_escalonamento))
+            atualizar_visibilidade_escalonamento()
+
+        if mostrar_controles_escala:
+            area_escala_m = fig.add_axes([.82, .215, .14, .020])
+            eixos_escalas['Momento fletor'] = area_escala_m
+            slider_m = Slider(area_escala_m, 'M', 0.0, 5.0,
+                              valinit=1.0, valfmt='%.2f')
+            slider_m.on_changed(lambda fator: atualizar_momento(escala_momento * fator))
+            self._controles.append(slider_m)
+            # Sliders independentes dos esforços N e V.
+            for tipo, sigla, y_slider in (
+                ('Esforço normal', 'N', 0.17),
+                ('Esforço cortante', 'V', 0.125),
+            ):
+                info = diagramas_nv[tipo]
+                area_nv = fig.add_axes([.82, y_slider, .14, .020])
+                eixos_escalas[tipo] = area_nv
+                controle_nv = Slider(
+                    area_nv, sigla, 0.0,
+                    5.0,
+                    valinit=1.0, valfmt='%.2f'
+                )
+                controle_nv.on_changed(
+                    lambda fator, atualizar=info['atualizar'], base=info['fator']:
+                    atualizar(base * fator)
+                )
+                self._controles.append(controle_nv)
+
+
+
+            # Uma escala para ASL/ASL2 e outra para ASW_S.
+            for titulo, sigla, y_slider in (
+                ('Armadura longitudinal', 'Asl', 0.100),
+                ('Armadura transversal', 'Asw/s', 0.060),
+            ):
+                info = diagramas_armadura[titulo]
+                area_arm = fig.add_axes([.82, y_slider, .14, .014])
+                eixos_escalas[titulo] = area_arm
+                controle_arm = Slider(
+                    area_arm, sigla, 0.0,
+                    5.0,
+                    valinit=1.0, valfmt='%.2f'
+                )
+                controle_arm.on_changed(
+                    lambda fator, atualizar=info['atualizar'], base=info['fator']:
+                    atualizar(base * fator)
+                )
+                self._controles.append(controle_arm)
+
+            if linhas_deformada:
+                # Controle de amplificação.
+                area_slider = fig.add_axes([
+                    0.82, 0.019, 0.14, 0.014
+                ])
+
+                eixos_escalas['Deformada'] = area_slider
+                slider = Slider(
+                    ax=area_slider,
+                    label="Def.",
+                    valmin=0.0,
+                    valmax=5.0,
+                    valinit=1.0,
+                    valfmt="%.2f"
+                )
+
+                slider.on_changed(lambda fator: atualizar_deformada(escala_auto * fator))
+
+                self._controles.append(slider)
+
+                # Informação sobre os deslocamentos calculados.
+                no_max = max(
+                    nos,
+                    key=lambda no: np.hypot(
+                        *deslocamento_no(no)[:2]
+                    )
+                )
+
+                ux, uy, rz = deslocamento_no(no_max)
+
+                texto_resultados = (
+                    f"Nó {no_max.num}\n"
+                    f"ux = {ux:.4e}\n"
+                    f"uy = {uy:.4e}\n"
+                    f"θz = {rz:.4e} rad"
+                )
+
+                fig.text(
+                    0.08, 0.010,
+                    texto_resultados,
+                    fontsize=8,
+                    va="bottom",
+                    family="monospace"
+                )
+
+        # Respeita os estados iniciais dos checkboxes, inclusive quando
+        # nenhum diagrama estiver selecionado.
+        atualizar_visibilidade_escalas()
+
+        # Reaplica as escalas selecionadas pelo usuário após recriar
+        # os artistas. Não altera os estados dos checkboxes.
+        if escalas_iniciais:
+            for controle in self._controles:
+                if isinstance(controle, Slider):
+                    rotulo = controle.label.get_text()
+                    if rotulo in escalas_iniciais:
+                        valor = float(escalas_iniciais[rotulo])
+                        if controle.valmin <= valor <= controle.valmax:
+                            controle.set_val(valor)
+
+
+
+    @staticmethod
+    def _coordenadas_deformadas(coordenadas, deslocamentos, fator:float):
+        """
+        Obtém as coordenadas gráficas da deformada amplificada.
+
+        Args:
+
+            coordenadas: coordenadas originais
+            deslocamentos: deslocamentos calculados pela estrutura
+            fator: fator de amplificação gráfica
+
+        Returns:
+
+            Coordenadas deformadas.
+        """
+
+        return coordenadas + fator * deslocamentos
 
     @staticmethod
     def _trechos_geometricos(barras):
@@ -944,263 +1386,7 @@ class Visualizacao:
         self._zoom_scroll_cid = fig.canvas.mpl_connect('scroll_event', zoom_scroll)
 
         if controles:
-            area = fig.add_axes([.79, .34, .20, .63])
-            area.set_title('Exibir', fontsize=10, loc='left')
-            nomes = [
-                'Geometria da viga', 'Modelo estrutural', 'Nós', 'Números dos nós',
-                'Números das barras', 'Apoios', 'Cargas distribuídas',
-                'Forças nodais', 'Momentos nodais', 'Deformada',
-                'Momento fletor', 'Diagrama decalado',
-                'Esforço Normal', 'Esforço cortante',
-                'Diagrama As longitudinal', 'Diagrama As transversal',
-                'Armadura longitudinal', 'Armadura transversal', 'Valores',
-            ]
-            nome_interno = nomes_internos_checkbox
-            # Ícones quadrados de 12 pt (Matplotlib >= 3.7).
-            # O parâmetro `s` corresponde à área em pontos quadrados.
-            checks = CheckButtons(
-                area, nomes, [estados[nome_interno.get(n, n)] for n in nomes],
-                frame_props={'s': 12**2, 'linewidth': 1.4},
-                check_props={'s': 12**2, 'linewidth': 1.8},
-            )
-            for spine in area.spines.values():
-                spine.set_visible(False)
-
-            def atualizar_valores():
-                """Exibe valores somente dos diagramas ativos."""
-                mostrar = estados['Valores']
-                momento_ativo = mostrar and estados['Momento fletor']
-                for artista in grupos['Valores dos momentos']:
-                    artista.set_visible(momento_ativo)
-                # Os extremos por trecho já fazem parte dos valores comuns;
-                # não duplicar os rótulos globais do momento.
-                for artista in grupos['Extremos do momento']:
-                    artista.set_visible(False)
-                for tipo, info in diagramas_nv.items():
-                    ativo = mostrar and estados[tipo]
-                    for artista in grupos[info['nome_valores']]:
-                        artista.set_visible(ativo)
-                for tipo, info in diagramas_armadura.items():
-                    ativo = mostrar and estados[tipo]
-                    for artista in grupos[info['nome_valores']]:
-                        artista.set_visible(ativo)
-
-            # Associa cada diagrama ao eixo do seu controle de escala.
-            # Os eixos são criados adiante, mas o callback já pode consultar
-            # este dicionário quando o usuário alternar um checkbox.
-            eixos_escalas = {}
-            controles_escalonamento = []
-
-            def atualizar_visibilidade_escalas():
-                """Mostra apenas as escalas dos diagramas habilitados."""
-                for nome_diagrama, eixo_escala in eixos_escalas.items():
-                    eixo_escala.set_visible(bool(estados[nome_diagrama]))
-
-            def atualizar_visibilidade_escalonamento():
-                """Mostra os controles N1/N2 apenas com a armadura longitudinal."""
-                visivel = bool(estados['Detalhamento longitudinal'])
-                for artista in controles_escalonamento:
-                    artista.set_visible(visivel)
-
-            def alternar(rotulo):
-                nome = nome_interno.get(rotulo, rotulo)
-                estados[nome] = not estados[nome]
-                if nome != 'Valores':
-                    for artista in grupos[nome]:
-                        artista.set_visible(estados[nome])
-                # Ao ativar diagramas, oculta as cargas para evitar sobreposição.
-                if (nome in ('Momento fletor', 'Diagrama decalado',
-                             'Esforço normal',
-                             'Esforço cortante', 'Armadura longitudinal',
-                             'Armadura transversal') and estados[nome]
-                        and estados['Cargas distribuídas']):
-                    checks.set_active(nomes.index('Cargas distribuídas'))
-                atualizar_valores()
-                atualizar_visibilidade_escalas()
-                atualizar_visibilidade_escalonamento()
-                fig.canvas.draw_idle()
-
-            checks.on_clicked(alternar)
-            # Os artistas de rótulos são criados ocultos. Ao reconstruir a
-            # figura após trocar a combinação de esforços, restaura também
-            # sua visibilidade conforme os checkboxes preservados, sem
-            # precisar clicar novamente em "Valores".
-            atualizar_valores()
-            area_reset = fig.add_axes([.80, .265, .17, .055])
-            reset = Button(area_reset, 'Restaurar vista')
-
-            def restaurar(_):
-                ax.set_xlim(*limites[0])
-                ax.set_ylim(*limites[1])
-                fig.canvas.draw_idle()
-
-            reset.on_clicked(restaurar)
-
-            self._controles = [checks, reset]
-
-            # ------------------------------------------------------------
-            # ESCALONAMENTO N1/N2 — CONTROLES NA ÁREA DE PLOTAGEM
-            # ------------------------------------------------------------
-            # Os sliders ficam fixos no canto superior esquerdo dos eixos.
-            # Suas coordenadas são relativas à área de plotagem, de modo que
-            # o posicionamento não depende dos limites ou do zoom da viga.
-            if hasattr(m, 'ap1') and hasattr(m, 'l') and hasattr(m, 'h'):
-                area_n1 = ax.inset_axes(
-                    [.105, .925, .225, .025],
-                    transform=ax.transAxes,
-                    zorder=21,
-                )
-                area_n2 = ax.inset_axes(
-                    [.105, .865, .225, .025],
-                    transform=ax.transAxes,
-                    zorder=21,
-                )
-
-                for area_escalonamento in (area_n1, area_n2):
-                    area_escalonamento.set_facecolor((1, 1, 1, .92))
-
-                controle_n1 = Slider(
-                    area_n1, 'N1', valmin=0, valmax=3,
-                    valinit=self.niveis_n1, valstep=1, valfmt='%d',
-                )
-                controle_n2 = Slider(
-                    area_n2, 'N2', valmin=0, valmax=3,
-                    valinit=self.niveis_n2, valstep=1, valfmt='%d',
-                )
-
-                titulo_escalonamento = ax.text(
-                    .015, .985, 'Escalonamento N1 / N2',
-                    transform=ax.transAxes, ha='left', va='top',
-                    fontsize=9, fontweight='bold', zorder=22,
-                    bbox=dict(facecolor='white', edgecolor='none', alpha=.85),
-                )
-
-                def alterar_escalonamento(_):
-                    """Atualiza as faixas de armadura após alterar um nível."""
-                    self.niveis_n1 = int(controle_n1.val)
-                    self.niveis_n2 = int(controle_n2.val)
-
-                    atualizar_faixas_n1_n2()
-
-                    visivel = estados['Detalhamento longitudinal']
-                    for artista in (*artistas_n1_n2, *artistas_banzos,
-                                    *artistas_alertas_apoios):
-                        artista.set_visible(visivel)
-
-                    fig.canvas.draw_idle()
-
-                controle_n1.on_changed(alterar_escalonamento)
-                controle_n2.on_changed(alterar_escalonamento)
-                self._controles.extend((controle_n1, controle_n2))
-                controles_escalonamento.extend((area_n1, area_n2, titulo_escalonamento))
-                atualizar_visibilidade_escalonamento()
-
-            if mostrar_controles_escala:
-                area_escala_m = fig.add_axes([.82, .215, .14, .020])
-                eixos_escalas['Momento fletor'] = area_escala_m
-                slider_m = Slider(area_escala_m, 'M', 0.0, 5.0,
-                                  valinit=1.0, valfmt='%.2f')
-                slider_m.on_changed(lambda fator: atualizar_momento(escala_momento * fator))
-                self._controles.append(slider_m)
-                # Sliders independentes dos esforços N e V.
-                for tipo, sigla, y_slider in (
-                    ('Esforço normal', 'N', 0.17),
-                    ('Esforço cortante', 'V', 0.125),
-                ):
-                    info = diagramas_nv[tipo]
-                    area_nv = fig.add_axes([.82, y_slider, .14, .020])
-                    eixos_escalas[tipo] = area_nv
-                    controle_nv = Slider(
-                        area_nv, sigla, 0.0,
-                        5.0,
-                        valinit=1.0, valfmt='%.2f'
-                    )
-                    controle_nv.on_changed(
-                        lambda fator, atualizar=info['atualizar'], base=info['fator']:
-                        atualizar(base * fator)
-                    )
-                    self._controles.append(controle_nv)
-
-
-
-                # Uma escala para ASL/ASL2 e outra para ASW_S.
-                for titulo, sigla, y_slider in (
-                    ('Armadura longitudinal', 'Asl', 0.100),
-                    ('Armadura transversal', 'Asw/s', 0.060),
-                ):
-                    info = diagramas_armadura[titulo]
-                    area_arm = fig.add_axes([.82, y_slider, .14, .014])
-                    eixos_escalas[titulo] = area_arm
-                    controle_arm = Slider(
-                        area_arm, sigla, 0.0,
-                        5.0,
-                        valinit=1.0, valfmt='%.2f'
-                    )
-                    controle_arm.on_changed(
-                        lambda fator, atualizar=info['atualizar'], base=info['fator']:
-                        atualizar(base * fator)
-                    )
-                    self._controles.append(controle_arm)
-
-                if linhas_deformada:
-                    # Controle de amplificação.
-                    area_slider = fig.add_axes([
-                        0.82, 0.019, 0.14, 0.014
-                    ])
-
-                    eixos_escalas['Deformada'] = area_slider
-                    slider = Slider(
-                        ax=area_slider,
-                        label="Def.",
-                        valmin=0.0,
-                        valmax=5.0,
-                        valinit=1.0,
-                        valfmt="%.2f"
-                    )
-
-                    slider.on_changed(lambda fator: atualizar_deformada(escala_auto * fator))
-
-                    self._controles.append(slider)
-
-                    # Informação sobre os deslocamentos calculados.
-                    no_max = max(
-                        nos,
-                        key=lambda no: np.hypot(
-                            *deslocamento_no(no)[:2]
-                        )
-                    )
-
-                    ux, uy, rz = deslocamento_no(no_max)
-
-                    texto_resultados = (
-                        f"Nó {no_max.num}\n"
-                        f"ux = {ux:.4e}\n"
-                        f"uy = {uy:.4e}\n"
-                        f"θz = {rz:.4e} rad"
-                    )
-
-                    fig.text(
-                        0.08, 0.010,
-                        texto_resultados,
-                        fontsize=8,
-                        va="bottom",
-                        family="monospace"
-                    )
-
-            # Respeita os estados iniciais dos checkboxes, inclusive quando
-            # nenhum diagrama estiver selecionado.
-            atualizar_visibilidade_escalas()
-
-            # Reaplica as escalas selecionadas pelo usuário após recriar
-            # os artistas. Não altera os estados dos checkboxes.
-            if escalas_iniciais:
-                for controle in self._controles:
-                    if isinstance(controle, Slider):
-                        rotulo = controle.label.get_text()
-                        if rotulo in escalas_iniciais:
-                            valor = float(escalas_iniciais[rotulo])
-                            if controle.valmin <= valor <= controle.valmax:
-                                controle.set_val(valor)
+            self._criar_controles_viga(fig, ax, grupos, estados, nomes_internos_checkbox, limites, m, mostrar_controles_escala, escala_momento, atualizar_momento, diagramas_nv, diagramas_armadura, linhas_deformada, atualizar_deformada, escala_auto, nos, deslocamento_no, escalas_iniciais, atualizar_faixas_n1_n2, artistas_n1_n2, artistas_banzos, artistas_alertas_apoios)
 
         return fig, ax
 
@@ -2116,7 +2302,7 @@ class Visualizacao:
                 linhas_deformada, dados_deformada
             ):
                 barra, coordenadas, deslocamentos = dados
-                pontos = coordenadas + fator*deslocamentos
+                pontos = self._coordenadas_deformadas(coordenadas, deslocamentos, fator)
                 linha.set_data(pontos[:, 0], pontos[:, 1])
 
             fig.canvas.draw_idle()
@@ -2635,7 +2821,7 @@ class Visualizacao:
         def atualizar(fator):
             for linha, dados in zip(linhas, dados_deformada):
                 barra, coordenadas, deslocamentos = dados
-                pontos = coordenadas + fator*deslocamentos
+                pontos = self._coordenadas_deformadas(coordenadas, deslocamentos, fator)
                 linha.set_data(pontos[:, 0], pontos[:, 1])
 
             fig.canvas.draw_idle()
