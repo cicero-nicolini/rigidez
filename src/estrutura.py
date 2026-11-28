@@ -176,6 +176,39 @@ class Estrutura:
                  
             barra.fl = barra.r @ barra.f 
 
+    def calcula_solicitacoes_internas(self, carregamentos=(), pontos_por_barra:int = 50) -> list:
+        """
+        Calcula as solicitações internas ao longo das barras por equilíbrio.
+
+        Args:
+
+            carregamentos: lista de carregamentos aplicados às barras
+            pontos_por_barra: número mínimo de pontos por barra
+
+        Returns:
+
+            Lista de tuplas contendo a barra e os vetores x, N, V e M.
+
+        Raises:
+
+            ValueError: comprimento, esforços ou carregamentos inválidos.
+        """
+
+        from .diagramas_esforcos import calcular_diagramas_barra
+
+        solicitacoes = []
+        carregamentos = tuple(carregamentos)
+
+        for barra in self.barras:
+
+            # Calcula os esforços no sistema local da barra por equilíbrio
+            dados = calcular_diagramas_barra(barra, carregamentos, pontos_por_barra)
+
+            solicitacoes.append((barra, dados['x'], dados['N'],
+                                  dados['V'], dados['M']))
+
+        return solicitacoes
+
     def calcula_ASL_barra(self) -> None:
         """Calcula as armaduras considerando as solicitações nos extremos da barra."""
         for barra in self.barras:

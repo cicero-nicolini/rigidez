@@ -151,7 +151,6 @@ class Visualizacao:
         import matplotlib.pyplot as plt
         from matplotlib.widgets import CheckButtons, Slider, Button
         from matplotlib.patches import FancyArrowPatch, Polygon, Circle, Arc
-        from .diagramas_esforcos import calcular_diagramas_barra
 
         estrutura = self.modelo
         nos, barras = estrutura.nos, estrutura.barras
@@ -250,7 +249,7 @@ class Visualizacao:
         # Geometria, numeração e diagramas de esforços.
         cores = {"Esforço Normal": "#7c3aed", "Esforço Cortante": "#e07b18",
                  "Esforço Fletor": "#16803c"}
-        for barra in barras:
+        for barra, x, N, V, M in estrutura.calcula_solicitacoes_internas(carregamentos, 201):
             p = np.array([barra.noi.x, barra.noi.y], float)
             q = np.array([barra.noj.x, barra.noj.y], float)
             d = q-p
@@ -263,8 +262,8 @@ class Visualizacao:
             meio = (p+q)/2
             registrar("Geometria do modelo", ax.annotate(f"B{int(barra.num)}", meio,
                         xytext=(5, 6), textcoords="offset points", fontsize=9, color="0.25"))
-            dados = calcular_diagramas_barra(barra, carregamentos)
-            eixo = p + dados["x"][:, None] * t
+            dados = {"N": N, "V": V, "M": M}
+            eixo = p + x[:, None] * t
             for grupo, campo in (("Esforço Normal", "N"), ("Esforço Cortante", "V"),
                                  ("Esforço Fletor", "M")):
                 valores = np.asarray(dados[campo], float)
@@ -768,38 +767,6 @@ class Visualizacao:
                 saida.append((no, valor, barra))
         return saida
 
-    def calcular_momento_barra(self, barra, n_pontos=50):
-        """
-            Obtém a interpolação gráfica dos momentos internos da barra.
-
-            Args:
-                barra: Elemento estrutural com esforços de extremidade.
-                n_pontos: Número de pontos usados na representação.
-
-            Returns:
-                Tupla com as posições locais e os momentos interpolados.
-
-            Raises:
-                ValueError: Se o comprimento ou o vetor de esforços for inválido.
-
-            Notes:
-                A interpolação é linear entre -fl[2] e fl[5] e não
-                representa necessariamente a distribuição exata sob cargas.
-        """
-        import numpy as np
-
-        L = float(barra.L)
-        if L <= 0:
-            raise ValueError(f"Barra {barra.num} com comprimento invalido.")
-        fl = np.asarray(barra.esforcos_exibicao, dtype=float).ravel()
-        if fl.size < 6:
-            raise ValueError(f"Barra {barra.num}: barra.fl deve ter 6 componentes.")
-
-        x = np.linspace(0.0, L, n_pontos)
-        Mi, Mj = -fl[2], fl[5]
-        M = Mi + (Mj - Mi) * (x / L)
-        return x, M
-
     def desenhar_geometria(self, mostrar_nos=False, mostrar_barras=False,
                        mostrar_apoios=True, ax=None, controles=True,
                        estados_iniciais=None, escalas_iniciais=None,
@@ -1300,8 +1267,12 @@ class Visualizacao:
         etiquetas_momento = []
         dados_momento = []
         extremos = []
-        for barra in barras:
-            x_local, M = self.calcular_momento_barra(barra)
+        solicitacoes = self.modelo.portico.calcula_solicitacoes_internas(cargas)
+        # Mantém os esforços das barras fictícias ocultos na apresentação.
+        solicitacoes = [(b, x, np.zeros_like(N), np.zeros_like(V), np.zeros_like(M))
+                        if getattr(b, "ficticia", False) else (b, x, N, V, M)
+                        for b, x, N, V, M in solicitacoes]
+        for barra, x_local, N, V, M in solicitacoes:
             xi, yi = barra.noi.x, barra.noi.y
             dx_b = barra.noj.x - xi
             dy_b = barra.noj.y - yi
@@ -1311,8 +1282,8 @@ class Visualizacao:
             c, s = dx_b/L, dy_b/L
             dados_momento.append((barra, xi, yi, c, s, x_local, M))
             if not getattr(barra, 'ficticia', False):
-                extremos.extend([(float(M[0]), barra.num, 'i'),
-                                 (float(M[-1]), barra.num, 'j')])
+                extremos.extend((float(M[k]), barra.num, float(x_local[k]))
+                                for k in (np.argmin(M), np.argmax(M)))
 
         # Envoltória decaladada de M: para cada x, busca os maiores valores
         # positivos e negativos no intervalo [x-a_l, x+a_l]. A envoltória
@@ -1404,13 +1375,18 @@ class Visualizacao:
             etiquetas_momento.append((anot, xb, yb, c, sn, valor))
 
         # Extremos globais continuam disponíveis no controle independente.
-        if rotulos_m:
-            for nome, item in (('Mmín', min(rotulos_m, key=lambda r: r[1])),
-                               ('Mmáx', max(rotulos_m, key=lambda r: r[1]))):
-                no, valor, barra = item
+        candidatos = [(float(M[k]), barra, float(x_local[k]))
+                      for barra, _, _, _, _, x_local, M in dados_momento
+                      if not getattr(barra, 'ficticia', False)
+                      for k in (np.argmin(M), np.argmax(M))]
+        if candidatos:
+            for nome, item in (('Mmín', min(candidatos, key=lambda r: r[0])),
+                               ('Mmáx', max(candidatos, key=lambda r: r[0]))):
+                valor, barra, x_local = item
                 c = (barra.noj.x-barra.noi.x)/barra.L
                 sn = (barra.noj.y-barra.noi.y)/barra.L
-                xb, yb = float(no.x), float(no.y)
+                xb = barra.noi.x + c*x_local
+                yb = barra.noi.y + sn*x_local
                 anot = ax.annotate(f'{nome} = {valor:.4g}', (xb, yb),
                                    xytext=(9, -15 if valor >= 0 else 12),
                                    textcoords='offset points', fontsize=8,
@@ -1453,7 +1429,7 @@ class Visualizacao:
             texto_extremos = 'Momentos indisponíveis'
 
         # ============================================================
-        # DIAGRAMAS DE ESFORCO NORMAL E CORTANTE (somente barra.fl)
+        # DIAGRAMAS DE ESFORCO NORMAL E CORTANTE
         # ============================================================
         diagramas_nv = {}
         for tipo, componentes, cor in (
@@ -1461,35 +1437,29 @@ class Visualizacao:
             ('Esforço cortante', (1, 4), '#e07b18'),
         ):
             dados = []
-            for barra in barras:
-                fl = np.asarray(barra.esforcos_exibicao, dtype=float).ravel()
-                if fl.size < 6:
-                    raise ValueError(f'Barra {barra.num}: fl deve ter 6 componentes.')
+            for barra, x, N, V, M in solicitacoes:
                 xi, yi = barra.noi.x, barra.noi.y
                 vx = barra.noj.x - xi
                 vy = barra.noj.y - yi
                 L = np.hypot(vx, vy)
                 if L <= 0:
                     continue
-                # Esforços internos: sinais nas extremidades opostos
-                # aos esforços nodais de ação do elemento no nó inicial.
-                qi, qj = -float(fl[componentes[0]]), float(fl[componentes[1]])
-                dados.append((barra, xi, yi, vx/L, vy/L, L, qi, qj))
+                q = N if componentes == (0, 3) else V
+                dados.append((barra, xi, yi, vx/L, vy/L, x, q))
 
-            qmax = max((max(abs(d[6]), abs(d[7])) for d in dados), default=0.0)
+            qmax = max((np.max(np.abs(d[6])) for d in dados), default=0.0)
             fator_auto = 0.06 * escala / qmax if qmax > 1e-12 else 1.0
             objetos, etiquetas, pontos_vistos = [], [], set()
-            for barra, xi, yi, c, s, L, qi, qj in dados:
-                xb = np.array([xi, xi + c*L])
-                yb = np.array([yi, yi + s*L])
-                q = np.array([qi, qj])
+            for barra, xi, yi, c, s, x, q in dados:
+                xb = xi + c*x
+                yb = yi + s*x
                 linha, = ax.plot([], [], color=cor, lw=1.8, zorder=7,
                                  visible=False)
                 preenchimento = ax.fill([], [], color=cor, alpha=0.13,
                                          zorder=3, visible=False)[0]
                 objetos.append((linha, preenchimento, xb, yb, c, s, q))
-            valores_nv = {id(b): (qi, qj)
-                          for b, _, _, _, _, _, qi, qj in dados}
+            valores_nv = {id(b): (float(q[0]), float(q[-1]))
+                          for b, _, _, _, _, _, q in dados}
             for no, valor, barra in self._pontos_rotulo_trechos(trechos, valores_nv):
                 c = (barra.noj.x-barra.noi.x)/barra.L
                 sn = (barra.noj.y-barra.noi.y)/barra.L

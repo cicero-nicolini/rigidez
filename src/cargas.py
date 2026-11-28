@@ -54,6 +54,7 @@ def analisar_combinacoes(modelo, imprimir=False):
         p.calcula_solicitacoes_internas_nodais()
         p.calcula_reacoes()
         resultado = {
+            "carregamentos": tuple(modelo.carregamentos),
             "u": np.array(p.u, copy=True),
             "R": np.array(p.R, copy=True),
             "fl": {barra.num: barra.fl.copy() for barra in modelo.barras},
@@ -77,6 +78,7 @@ def selecionar_esforcos(modelo, tipo="calculo"):
     if tipo not in ("calculo", "caracteristicos"):
         raise ValueError("tipo deve ser 'calculo' ou 'caracteristicos'.")
     estado = getattr(modelo, "resultados_" + tipo)
+    modelo.carregamentos = list(estado["carregamentos"])
     modelo.portico.u = estado["u"].copy()
     modelo.portico.R = estado["R"].copy()
     for barra in modelo.barras:
