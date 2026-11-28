@@ -14,7 +14,7 @@ from .secao import Secao
 from .barra import Barra
 from .carregamento_distribuido import Carregamento_distribuido
 from .estrutura import Estrutura
-from .visualizacao import print_vetor, print_matriz
+from .utilidades import print_vetor, print_matriz
 
 
 class ModeloFuros:

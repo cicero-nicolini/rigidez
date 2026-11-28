@@ -3,116 +3,9 @@
 SIMBOLO_BITOLA = "\u00D8"  # Ø: símbolo único para bitolas em toda a interface.
 
 # Funções legadas preservadas para compatibilidade com os cálculos.
-def print_matriz(m) -> None:
-    """
-        Imprime uma matriz com índices e colunas alinhados.
-
-        Args:
-            m: Matriz bidimensional de valores numéricos.
-    """
-
-    l, c = m.shape
-    tamanho_colunas = []
-    for i in range(c):
-        maior_l = 0
-        for j in range(l):
-            s = f"{m[j,i]:.1f}"
-            maior_l = max(len(s), maior_l)
-        tamanho_colunas.append(maior_l)
-    cabecalho = '\x1b[90m  '
-    for i in range(c):
-        cabecalho += ' ' + str(i).center(tamanho_colunas[i])
-    cabecalho += '\x1b[0m'
-    print(cabecalho)
-    for i in range(l):
-        linha = '\x1b[90m' + str(i).rjust(2) + '\x1b[0m'
-        for j in range(c):
-            s = f"{m[j,i]:.1f}".rjust(tamanho_colunas[j])
-            linha += ' ' + s
-        print(linha)
-
-
-def print_vetor(v) -> None:
-    """
-        Imprime um vetor numérico com índices alinhados.
-
-        Args:
-            v: Vetor unidimensional de valores numéricos.
-    """
-
-    def fmt(n):
-        if abs(n) < 0.06 or abs(n) > 1e6:
-            return f'{n:#.2g}'
-        return f'{n:.1f}'
-    l = v.shape[0]
-    maior_l = max((len(fmt(v[i])) for i in range(l)), default=0)
-    for i in range(l):
-        print('\x1b[90m' + str(i).rjust(2) + '\x1b[0m' +
-              ' ' + fmt(v[i]).rjust(maior_l))
-
-
-def _comprimento_modulado(inicio_cm, fim_cm, limite_esquerdo_cm,
-                          limite_direito_cm, modulo_cm=5.0):
-    """Arredonda o comprimento para cima, ampliando a barra quando possível.
-
-    Args:
-        inicio_cm: Coordenada inicial da barra, em centímetros.
-        fim_cm: Coordenada final da barra, em centímetros.
-        limite_esquerdo_cm: Limite físico disponível à esquerda.
-        limite_direito_cm: Limite físico disponível à direita.
-        modulo_cm: Módulo de comprimento, em centímetros.
-
-    Returns:
-        Tupla (início, fim) com comprimento múltiplo do módulo.
-
-    Raises:
-        ValueError: Se o comprimento modular não couber nos limites.
-
-    Notes:
-        O arredondamento é sempre para cima, preservando a extensão
-        necessária por decalagem e ancoragem. Não comprova a viabilidade
-        física da ancoragem nas regiões de apoio ou de abertura.
-    """
-    from math import ceil
-
-    inicio = float(inicio_cm)
-    fim = float(fim_cm)
-    minimo = float(limite_esquerdo_cm)
-    maximo = float(limite_direito_cm)
-    comprimento = fim - inicio
-    if comprimento <= 0:
-        raise ValueError('Comprimento de armadura inválido.')
-
-    # Tolerância numérica evita arredondar 215,00000000001 para 220.
-    comprimento_final = modulo_cm * ceil((comprimento - 1e-7) / modulo_cm)
-    adicional = max(0.0, comprimento_final - comprimento)
-    if adicional < 1e-7:
-        return inicio, fim
-
-    direita = min(adicional, max(0.0, maximo - fim))
-    esquerda = adicional - direita
-    if esquerda > max(0.0, inicio - minimo) + 1e-6:
-        raise ValueError(
-            'Não há espaço para modular o comprimento da armadura '
-            f'de {comprimento:.3f} cm para {comprimento_final:.0f} cm.')
-
-    return inicio - esquerda, fim + direita
-
-
-def _modular_armaduras(armaduras, limite_esquerdo_cm, limite_direito_cm):
-    """Modula as coordenadas das barras e mantém seus demais atributos."""
-    from dataclasses import replace
-
-    resultado = []
-    for armadura in armaduras:
-        inicio, fim = _comprimento_modulado(
-            armadura.inicio_cm, armadura.fim_cm,
-            limite_esquerdo_cm, limite_direito_cm)
-        alteracoes = {'inicio_cm': inicio, 'fim_cm': fim}
-        if hasattr(armadura, 'comprimento_geometrico_cm'):
-            alteracoes['comprimento_geometrico_cm'] = fim - inicio
-        resultado.append(replace(armadura, **alteracoes))
-    return resultado
+from .utilidades import print_matriz, print_vetor
+from .detalhamento import Detalhamento
+from .escalonamento_n1_n2 import calcula_momentos_decalados
 
 
 class Visualizacao:
@@ -1285,50 +1178,9 @@ class Visualizacao:
                 extremos.extend((float(M[k]), barra.num, float(x_local[k]))
                                 for k in (np.argmin(M), np.argmax(M)))
 
-        # Envoltória decaladada de M: para cada x, busca os maiores valores
-        # positivos e negativos no intervalo [x-a_l, x+a_l]. A envoltória
-        # é calculada por região contínua, sem atravessar lacunas da malha.
-        # Esta visualização não substitui a verificação normativa da decalagem.
-        from .escalonamento_n1_n2 import distancia_decalagem
-
-        def decalagem_barra(barra):
-            return distancia_decalagem(
-                barra, automatica=decalagem_automatica,
-                manual_cm=(self.decalagem_cm if self._decalagem_manual else None))
-
-        dados_decalados = []
-        # Amostragem por alinhamento (mesma ordenada da viga), para não
-        # misturar diagramas de banzos e montantes de aberturas.
-        for barra, xi, yi, c, s, x_local, M in dados_momento:
-            if getattr(barra, 'ficticia', False) or abs(s) > 1e-7:
-                dados_decalados.append((np.array(M), np.array(M)))
-                continue
-            a_l = decalagem_barra(barra)
-            xs = xi + c * x_local
-            candidatos = []
-            for outra, xj, yj, cj, sj, localj, mj in dados_momento:
-                if (getattr(outra, 'ficticia', False) or abs(sj) > 1e-7
-                        or abs(yj-yi) > 1e-5):
-                    continue
-                xx = xj + cj * localj
-                ordem = np.argsort(xx)
-                candidatos.append((xx[ordem], np.asarray(mj)[ordem]))
-            positivos, negativos = [], []
-            for x in xs:
-                valores = []
-                for xx, mm in candidatos:
-                    esquerda = max(float(xx[0]), float(x-a_l))
-                    direita = min(float(xx[-1]), float(x+a_l))
-                    if direita < esquerda - 1e-8:
-                        continue
-                    interior = mm[(xx >= esquerda) & (xx <= direita)]
-                    valores.extend(interior.tolist())
-                    valores.extend(np.interp([esquerda, direita], xx, mm).tolist())
-                if not valores:
-                    valores = [float(np.interp(x, xs, M))]
-                positivos.append(max(0.0, max(valores)))
-                negativos.append(min(0.0, min(valores)))
-            dados_decalados.append((np.array(positivos), np.array(negativos)))
+        dados_decalados = calcula_momentos_decalados(
+            dados_momento, decalagem_automatica,
+            self.decalagem_cm if self._decalagem_manual else None)
 
         Mmax = max((np.max(np.abs(d[6])) for d in dados_momento), default=0.0)
         escala_momento = 0.06 * escala / Mmax if Mmax > 1e-12 else 1.0
@@ -1691,21 +1543,23 @@ class Visualizacao:
         # Detalhamento longitudinal: cores individuais e legenda fixa na área de desenho.
         grupos['Detalhamento longitudinal'] = []
         if hasattr(m, 'ap1') and hasattr(m, 'l') and hasattr(m, 'h'):
-            from .armaduras_longitudinais import propor_longitudinais
-            from .armaduras_banzos import propor_banzos
-
-            propostas = propor_longitudinais(m)
-            propostas_banzos = propor_banzos(m)
-            if ancoragem_automatica:
-                from .ancoragem_banzos import ancorar_banzos
-                propostas_banzos, self.diagnosticos_ancoragem_banzos = ancorar_banzos(
-                    m, propostas_banzos, boa_aderencia=boa_aderencia)
-            limite_x_esquerdo = float(m.ap1) / 2.0
+            detalhamento = Detalhamento(m)
+            self.detalhamento = detalhamento
+            limite_x_esquerdo = float(m.ap1)/2.0
             limite_x_direito = limite_x_esquerdo + float(m.l)
-            # Ancoragem de apoio é aplicada às faixas após a continuidade;
-            # propostas de banzo são tratadas mais adiante na atualização.
-            propostas_banzos = _modular_armaduras(
-                propostas_banzos, limite_x_esquerdo, limite_x_direito)
+            def calcular_detalhamento():
+                detalhamento.calcula_longitudinais(
+                    self.niveis_n1, self.niveis_n2,
+                    self.decalagem_cm if self._decalagem_manual else None,
+                    decalagem_automatica, ancoragem_automatica,
+                    ancoragem_apoios, boa_aderencia)
+                for nome in ('armaduras_longitudinais', 'armaduras_escalonadas',
+                             'armaduras_banzos', 'diagnosticos_ancoragem_apoios',
+                             'diagnosticos_ancoragem_banzos'):
+                    setattr(self, nome, getattr(detalhamento, nome))
+            calcular_detalhamento()
+            propostas = detalhamento.armaduras_longitudinais
+            propostas_banzos = detalhamento.armaduras_banzos
             artistas_banzos = []
             anotacoes_banzos = {}
             todas = [*propostas, *propostas_banzos]
@@ -1730,7 +1584,6 @@ class Visualizacao:
             artistas_alertas_apoios = []
 
             def atualizar_faixas_n1_n2():
-                from .escalonamento_n1_n2 import propor_escalonamento, continuidade_nos_furos
                 for artista in artistas_n1_n2:
                     artista.remove()
                     if artista in grupos['Detalhamento longitudinal']:
@@ -1741,59 +1594,14 @@ class Visualizacao:
                     if artista in grupos['Detalhamento longitudinal']:
                         grupos['Detalhamento longitudinal'].remove(artista)
                 artistas_alertas_apoios.clear()
-                faixas = propor_escalonamento(
-                    m, niveis_n1=self.niveis_n1, niveis_n2=self.niveis_n2,
-                    decalagem_cm=(self.decalagem_cm if self._decalagem_manual
-                                  else None),
-                    decalagem_automatica=decalagem_automatica,
-                    ancoragem_automatica=ancoragem_automatica,
-                    boa_aderencia=boa_aderencia)
-                faixas, areas_continuas = continuidade_nos_furos(m, faixas)
-                if ancoragem_automatica and ancoragem_apoios:
-                    from .ancoragem_apoios import ancorar_nos_apoios
-                    faixas, self.diagnosticos_ancoragem_apoios = ancorar_nos_apoios(
-                        m, faixas, boa_aderencia=boa_aderencia)
-                else:
-                    self.diagnosticos_ancoragem_apoios = []
-                # Permite prolongamento até as faces externas dos apoios.
-                # Se a modulação não couber, a rotina sinaliza insuficiência.
-                # As barras retas podem entrar nos apoios, mas devem respeitar
-                # o cobrimento na face externa de cada pilar.
-                cobrimento_apoio = float(getattr(m, 'cob', 0.0))
-                # O vão l é livre entre faces internas dos pilares.
-                # A ancoragem parte dessas faces, não dos nós centrais.
-                limite_mod_esq = (limite_x_esquerdo - float(m.ap1)
-                                  + cobrimento_apoio
-                                  if ancoragem_automatica and ancoragem_apoios
-                                  else limite_x_esquerdo)
-                limite_mod_dir = (limite_x_direito + float(m.ap2)
-                                  - cobrimento_apoio
-                                  if ancoragem_automatica and ancoragem_apoios
-                                  else limite_x_direito)
-                faixas = _modular_armaduras(
-                    faixas, limite_mod_esq, limite_mod_dir)
-                self.armaduras_escalonadas = faixas
-                # Redimensiona apenas os complementos dos banzos externos,
-                # descontando a armadura N1/N2 que atravessa cada furo.
-                novos_banzos = propor_banzos(
-                    m, areas_continuas_por_furo=areas_continuas)
-                if ancoragem_automatica:
-                    from .ancoragem_banzos import ancorar_banzos
-                    novos_banzos, self.diagnosticos_ancoragem_banzos = ancorar_banzos(
-                        m, novos_banzos, boa_aderencia=boa_aderencia)
+                calcular_detalhamento()
+                faixas = detalhamento.armaduras_escalonadas
+                novos_banzos = detalhamento.armaduras_banzos
                 for artista in artistas_banzos:
                     artista.remove()
                     if artista in grupos['Detalhamento longitudinal']:
                         grupos['Detalhamento longitudinal'].remove(artista)
                 artistas_banzos.clear()
-                if ancoragem_automatica and ancoragem_apoios:
-                    novos_banzos, diagnosticos_banzos_apoios = ancorar_nos_apoios(
-                        m, novos_banzos, boa_aderencia=boa_aderencia)
-                    self.diagnosticos_ancoragem_apoios.extend(diagnosticos_banzos_apoios)
-                novos_banzos = _modular_armaduras(
-                    novos_banzos, limite_mod_esq, limite_mod_dir)
-                self.armaduras_banzos = novos_banzos
-
                 # Diagnóstico explícito: a rotina anterior apenas armazenava
                 # resultados, sem apresentar avisos no terminal ou no gráfico.
                 if ancoragem_automatica and ancoragem_apoios:
@@ -2034,85 +1842,7 @@ class Visualizacao:
                 grupos['Detalhamento longitudinal'].append(anot)
                 anotacoes_banzos[proposta.posicao] = anot
 
-        # ------------------------------------------------------------------
-        # DETALHAMENTO DAS ARMADURAS TRANSVERSAIS
-        # ------------------------------------------------------------------
-        # Estribos em seção cheia e nos banzos, com relação à direita.
-        grupos['Detalhamento transversal'] = []
-        if hasattr(m, 'ap1') and hasattr(m, 'l') and (hasattr(m, 'furos') or hasattr(m, 'lf')):
-            from .armaduras_transversais import propor_transversais
-            from .armaduras_estribos_banzos import propor_estribos_banzos
-            propostas_estribos = propor_transversais(m)
-            propostas_banzos_estribos = propor_estribos_banzos(
-                m, primeira_posicao=len(propostas_estribos) + 1)
-            todos_estribos = [*propostas_estribos, *propostas_banzos_estribos]
-            h = float(m.h)
-            cobrimento = min(3.5, h * 0.15)
-            topo, base = h / 2 - cobrimento, -h / 2 + cobrimento
-            cores_estribos = ('#8050a0', '#b05b20', '#167f76', '#b03267',
-                              '#4169a2', '#737c18', '#a04a36', '#6b55a8')
-
-            # Agrupa posições com o mesmo detalhamento e a mesma altura
-            # de estribo, preservando os trechos físicos de cada proposta.
-            # Arredondamentos apenas estabilizam a comparação de floats.
-            grupos_estribos = {}
-            for proposta in todos_estribos:
-                if hasattr(proposta, 'y_inferior_cm'):
-                    ybaixo, yalto = (float(proposta.y_inferior_cm),
-                                     float(proposta.y_superior_cm))
-                else:
-                    ybaixo, yalto = base, topo
-
-                altura = yalto - ybaixo
-                chave = (round(float(proposta.asw_fornecida_cm2_m), 8),
-                         round(altura, 8),
-                         round(float(proposta.bitola_mm), 8),
-                         int(proposta.ramos),
-                         round(float(proposta.espacamento_cm), 8))
-                if chave not in grupos_estribos:
-                    indice = len(grupos_estribos)
-                    grupos_estribos[chave] = {
-                        'posicao': f'E{indice + 1}',
-                        'cor': cores_estribos[indice % len(cores_estribos)],
-                        'quantidade': 0,
-                        'proposta': proposta,
-                    }
-                grupo = grupos_estribos[chave]
-                grupo['quantidade'] += int(proposta.quantidade)
-
-                cor = grupo['cor']
-                xs = np.linspace(proposta.inicio_cm, proposta.fim_cm,
-                                 proposta.quantidade)
-                for x in xs:
-                    linha, = ax.plot([x, x], [ybaixo, yalto], color=cor,
-                                     lw=.85, zorder=11, visible=False)
-                    grupos['Detalhamento transversal'].append(linha)
-
-                centro = (proposta.inicio_cm + proposta.fim_cm) / 2
-                rotulo = ax.annotate(
-                    grupo['posicao'], (centro, (ybaixo + yalto) / 2),
-                    ha='center', va='center', fontsize=8, weight='bold',
-                    color=cor, zorder=17, visible=False,
-                    bbox=dict(facecolor='white', edgecolor='none', alpha=.88, pad=1))
-                grupos['Detalhamento transversal'].append(rotulo)
-
-            # Uma linha por posição E#, somando as quantidades dos trechos.
-            for i, grupo in enumerate(grupos_estribos.values()):
-                proposta = grupo['proposta']
-                anot = ax.annotate(
-                    (f"{grupo['quantidade']} {grupo['posicao']} {SIMBOLO_BITOLA}{proposta.bitola_mm:g} "
-                     f'c/{proposta.espacamento_cm:g} '
-                     f'(Asws = {proposta.asw_fornecida_cm2_m:.2f} cm²/m)'),
-                    xy=(.982, .035), xycoords='axes fraction',
-                    xytext=(0, 12 * (len(grupos_estribos) - 1 - i)),
-                    textcoords='offset points', ha='right', va='bottom',
-                    color=grupo['cor'], fontsize=8, family='DejaVu Sans', weight='bold',
-                    bbox=dict(facecolor='white', edgecolor='none', alpha=.9, pad=1),
-                    visible=False, zorder=30, annotation_clip=False)
-                grupos['Detalhamento transversal'].append(anot)
-
-            self.armaduras_transversais = propostas_estribos
-            self.armaduras_estribos_banzos = propostas_banzos_estribos
+        self._desenhar_detalhamento_transversal(ax, m, grupos)
 
         grupos['Geometria da viga'] = geometria_viga
 
@@ -2527,6 +2257,99 @@ class Visualizacao:
 
         return fig, ax
 
+
+    def _desenhar_detalhamento_transversal(self, ax, m, grupos:dict) -> None:
+        """
+        Representa os estribos e suas legendas.
+
+        Args:
+
+            ax: eixos Matplotlib
+            m: modelo de viga
+            grupos: coleções de artistas gráficos
+        """
+
+        import numpy as np
+
+        # ------------------------------------------------------------------
+        # DETALHAMENTO DAS ARMADURAS TRANSVERSAIS
+        # ------------------------------------------------------------------
+        # Estribos em seção cheia e nos banzos, com relação à direita.
+        grupos['Detalhamento transversal'] = []
+        if hasattr(m, 'ap1') and hasattr(m, 'l') and (hasattr(m, 'furos') or hasattr(m, 'lf')):
+            if not hasattr(self, 'detalhamento') or self.detalhamento.modelo is not m:
+                self.detalhamento = Detalhamento(m)
+            self.detalhamento.calcula_transversais()
+            propostas_estribos = self.detalhamento.armaduras_transversais
+            propostas_banzos_estribos = self.detalhamento.armaduras_estribos_banzos
+            todos_estribos = [*propostas_estribos, *propostas_banzos_estribos]
+            h = float(m.h)
+            cobrimento = min(3.5, h * 0.15)
+            topo, base = h / 2 - cobrimento, -h / 2 + cobrimento
+            cores_estribos = ('#8050a0', '#b05b20', '#167f76', '#b03267',
+                              '#4169a2', '#737c18', '#a04a36', '#6b55a8')
+
+            # Agrupa posições com o mesmo detalhamento e a mesma altura
+            # de estribo, preservando os trechos físicos de cada proposta.
+            # Arredondamentos apenas estabilizam a comparação de floats.
+            grupos_estribos = {}
+            for proposta in todos_estribos:
+                if hasattr(proposta, 'y_inferior_cm'):
+                    ybaixo, yalto = (float(proposta.y_inferior_cm),
+                                     float(proposta.y_superior_cm))
+                else:
+                    ybaixo, yalto = base, topo
+
+                altura = yalto - ybaixo
+                chave = (round(float(proposta.asw_fornecida_cm2_m), 8),
+                         round(altura, 8),
+                         round(float(proposta.bitola_mm), 8),
+                         int(proposta.ramos),
+                         round(float(proposta.espacamento_cm), 8))
+                if chave not in grupos_estribos:
+                    indice = len(grupos_estribos)
+                    grupos_estribos[chave] = {
+                        'posicao': f'E{indice + 1}',
+                        'cor': cores_estribos[indice % len(cores_estribos)],
+                        'quantidade': 0,
+                        'proposta': proposta,
+                    }
+                grupo = grupos_estribos[chave]
+                grupo['quantidade'] += int(proposta.quantidade)
+
+                cor = grupo['cor']
+                xs = np.linspace(proposta.inicio_cm, proposta.fim_cm,
+                                 proposta.quantidade)
+                for x in xs:
+                    linha, = ax.plot([x, x], [ybaixo, yalto], color=cor,
+                                     lw=.85, zorder=11, visible=False)
+                    grupos['Detalhamento transversal'].append(linha)
+
+                centro = (proposta.inicio_cm + proposta.fim_cm) / 2
+                rotulo = ax.annotate(
+                    grupo['posicao'], (centro, (ybaixo + yalto) / 2),
+                    ha='center', va='center', fontsize=8, weight='bold',
+                    color=cor, zorder=17, visible=False,
+                    bbox=dict(facecolor='white', edgecolor='none', alpha=.88, pad=1))
+                grupos['Detalhamento transversal'].append(rotulo)
+
+            # Uma linha por posição E#, somando as quantidades dos trechos.
+            for i, grupo in enumerate(grupos_estribos.values()):
+                proposta = grupo['proposta']
+                anot = ax.annotate(
+                    (f"{grupo['quantidade']} {grupo['posicao']} {SIMBOLO_BITOLA}{proposta.bitola_mm:g} "
+                     f'c/{proposta.espacamento_cm:g} '
+                     f'(Asws = {proposta.asw_fornecida_cm2_m:.2f} cm²/m)'),
+                    xy=(.982, .035), xycoords='axes fraction',
+                    xytext=(0, 12 * (len(grupos_estribos) - 1 - i)),
+                    textcoords='offset points', ha='right', va='bottom',
+                    color=grupo['cor'], fontsize=8, family='DejaVu Sans', weight='bold',
+                    bbox=dict(facecolor='white', edgecolor='none', alpha=.9, pad=1),
+                    visible=False, zorder=30, annotation_clip=False)
+                grupos['Detalhamento transversal'].append(anot)
+
+            self.armaduras_transversais = propostas_estribos
+            self.armaduras_estribos_banzos = propostas_banzos_estribos
 
     def desenhar_deformada(self, ax=None, escala_inicial=None,
                           pontos_por_barra=30):

@@ -482,3 +482,57 @@ def continuidade_nos_furos(modelo, faixas, tolerancia=1e-5):
                 if f.posicao == posicao and f.inicio_cm <= xa+tolerancia
                 and f.fim_cm >= xb-tolerancia)
     return unidos, areas
+
+
+def calcula_momentos_decalados(dados_momento:list, decalagem_automatica:bool = True, decalagem_cm:float = None) -> list:
+    """
+    Calcula as envoltórias de momentos decalados por alinhamento horizontal.
+
+    Args:
+
+        dados_momento: lista de tuplas (barra, xi, yi, c, s, x_local, M)
+        decalagem_automatica: indica se a distância é calculada automaticamente
+        decalagem_cm: distância manual de decalagem em cm
+
+    Returns:
+
+        Lista de pares de vetores de momentos positivos e negativos.
+    """
+
+    import numpy as np
+
+    dados_decalados = []
+    # Amostragem por alinhamento (mesma ordenada da viga), para não
+    # misturar diagramas de banzos e montantes de aberturas.
+    for barra, xi, yi, c, s, x_local, M in dados_momento:
+        if getattr(barra, 'ficticia', False) or abs(s) > 1e-7:
+            dados_decalados.append((np.array(M), np.array(M)))
+            continue
+        a_l = distancia_decalagem(barra, automatica=decalagem_automatica, manual_cm=decalagem_cm)
+        xs = xi + c * x_local
+        candidatos = []
+        for outra, xj, yj, cj, sj, localj, mj in dados_momento:
+            if (getattr(outra, 'ficticia', False) or abs(sj) > 1e-7
+                    or abs(yj-yi) > 1e-5):
+                continue
+            xx = xj + cj * localj
+            ordem = np.argsort(xx)
+            candidatos.append((xx[ordem], np.asarray(mj)[ordem]))
+        positivos, negativos = [], []
+        for x in xs:
+            valores = []
+            for xx, mm in candidatos:
+                esquerda = max(float(xx[0]), float(x-a_l))
+                direita = min(float(xx[-1]), float(x+a_l))
+                if direita < esquerda - 1e-8:
+                    continue
+                interior = mm[(xx >= esquerda) & (xx <= direita)]
+                valores.extend(interior.tolist())
+                valores.extend(np.interp([esquerda, direita], xx, mm).tolist())
+            if not valores:
+                valores = [float(np.interp(x, xs, M))]
+            positivos.append(max(0.0, max(valores)))
+            negativos.append(min(0.0, min(valores)))
+        dados_decalados.append((np.array(positivos), np.array(negativos)))
+
+    return dados_decalados

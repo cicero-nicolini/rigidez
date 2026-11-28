@@ -10,7 +10,7 @@ from .carregamento_distribuido import Carregamento_distribuido
 from .estrutura import Estrutura
 from matplotlib.collections import LineCollection
 import matplotlib.pyplot as plt
-from .visualizacao import print_vetor, print_matriz
+from .utilidades import print_vetor, print_matriz
 
 class Modelo:
     """Representa as propriedades e parâmetros referente ao objeto modelo."""
