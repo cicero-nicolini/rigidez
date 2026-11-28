@@ -30,6 +30,9 @@ class Estrutura:
     def monta_k(self) -> None:
         """Monta a matriz de rigidez da estrutura."""        
         
+        # Reinicia a matriz antes de montar as contribuições das barras
+        self.k.fill(0.0)
+
         for barra in self.barras:
             barra.comprimento_barra()
             barra.calcula_klocal()
@@ -43,7 +46,7 @@ class Estrutura:
     def monta_k01(self) -> None:
         """Aplica as condições de contorno na matriz da estrutura para calcular os deslocamentos."""     
     
-        self.k01 = self.k
+        self.k01 = self.k.copy()
         for no in self.nos:
             if no.Tx:
                 gdl = 3*no.num-3
@@ -87,7 +90,7 @@ class Estrutura:
     def calcula_deslocamentos(self) -> None:
         """Calcula o vetor de deslocamentos da estrutura."""     
         
-        self.u = np.linalg.inv(self.k01)@ self.fnos
+        self.u = np.linalg.solve(self.k01, self.fnos)
 
     def calcula_deformada(self, pontos_por_barra:int = 40) -> list:
         """
@@ -226,6 +229,9 @@ class Estrutura:
     def calcula_reacoes(self) -> None:
         """Calcula um vetor com as reações da estrutura."""      
         
+        # Reinicia o vetor de reações para o estado de carregamento atual
+        self.R.fill(0.0)
+
         for barra in self.barras:
             barra.monta_q()
 

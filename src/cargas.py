@@ -57,6 +57,10 @@ def analisar_combinacoes(modelo, imprimir=False):
             "carregamentos": tuple(modelo.carregamentos),
             "u": np.array(p.u, copy=True),
             "R": np.array(p.R, copy=True),
+            "fnos": p.fnos.copy(),
+            "f_global": p.f.copy(),
+            "u_barras": {barra.num: barra.u.copy() for barra in modelo.barras},
+            "fepl": {barra.num: barra.fepl.copy() for barra in modelo.barras},
             "fl": {barra.num: barra.fl.copy() for barra in modelo.barras},
             "f": {barra.num: barra.f.copy() for barra in modelo.barras},
             "fep": {barra.num: barra.fep.copy() for barra in modelo.barras},
@@ -71,9 +75,17 @@ def analisar_combinacoes(modelo, imprimir=False):
 
 
 def selecionar_esforcos(modelo, tipo="calculo"):
-    """Altera o estado exibido (fl), sem recalcular armaduras.
+    """
+    Restaura os resultados da combinação selecionada sem recalcular armaduras.
 
-    Para voltar ao dimensionamento use tipo='calculo'.
+    Args:
+
+        modelo: objeto modelo previamente analisado
+        tipo: combinação de cálculo ou característica
+
+    Raises:
+
+        ValueError: tipo de combinação inválido.
     """
     if tipo not in ("calculo", "caracteristicos"):
         raise ValueError("tipo deve ser 'calculo' ou 'caracteristicos'.")
@@ -81,7 +93,14 @@ def selecionar_esforcos(modelo, tipo="calculo"):
     modelo.carregamentos = list(estado["carregamentos"])
     modelo.portico.u = estado["u"].copy()
     modelo.portico.R = estado["R"].copy()
+    modelo.portico.fnos = estado["fnos"].copy()
+    modelo.portico.f = estado["f_global"].copy()
+
+    # Restaura os vetores de cada barra no estado selecionado
     for barra in modelo.barras:
         barra.fl = estado["fl"][barra.num].copy()
         barra.f = estado["f"][barra.num].copy()
+        barra.u = estado["u_barras"][barra.num].copy()
+        barra.fep = estado["fep"][barra.num].copy()
+        barra.fepl = estado["fepl"][barra.num].copy()
     modelo.tipo_esforcos = tipo
