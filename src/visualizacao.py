@@ -424,28 +424,12 @@ class Visualizacao:
                         seta_carga(pos, np.sign(valor)*direcao,
                                    .14*extensao, f"{nome}={valor:g}")
 
-        # Deformada com interpolação de Hermite, sem modificar o modelo.
+        # Deformada obtida da análise estrutural.
         max_deslocamento = float(np.max(np.hypot(u[0::3], u[1::3])))
         fator_deformada = (.06 * extensao / max_deslocamento
                            if max_deslocamento > 1e-14 else 1.0)
         deformadas = []
-        for barra in barras:
-            pi = np.array([barra.noi.x, barra.noi.y], float)
-            pj = np.array([barra.noj.x, barra.noj.y], float)
-            delta = pj - pi
-            comprimento = float(np.linalg.norm(delta))
-            c, sn = delta / comprimento
-            T = np.array([[c, sn, 0], [-sn, c, 0], [0, 0, 1]])
-            ui = T @ u[3*(barra.noi.num-1):3*barra.noi.num]
-            uj = T @ u[3*(barra.noj.num-1):3*barra.noj.num]
-            r = np.linspace(0, 1, 81)
-            axial = (1-r)*ui[0] + r*uj[0]
-            transv = ((1-3*r*r+2*r**3)*ui[1]
-                      + comprimento*(r-2*r*r+r**3)*ui[2]
-                      + (3*r*r-2*r**3)*uj[1]
-                      + comprimento*(-r*r+r**3)*uj[2])
-            original = pi + (comprimento*r)[:, None] * np.array([c, sn])
-            desloc = axial[:, None]*np.array([c, sn]) + transv[:, None]*np.array([-sn, c])
+        for barra, original, desloc in estrutura.calcula_deformada(81):
             pontos = original + fator_deformada*desloc
             linha, = ax.plot(pontos[:, 0], pontos[:, 1], color="#1769aa",
                              lw=2, zorder=6)
@@ -1693,67 +1677,19 @@ class Visualizacao:
                     "O vetor de deslocamentos contém valores inválidos."
                 )
 
-            # Associação entre nós e posições no vetor global.
-            # Pressupõe a mesma ordem utilizada na montagem da matriz.
-            indice_no = {
-                id(no): i for i, no in enumerate(nos)
-            }
-
+            # Deslocamentos nodais para a informação de resultados.
             def deslocamento_no(no):
-                i = 3 * indice_no[id(no)]
+                i = 3 * (no.num - 1)
                 return u[i:i + 3]
 
-            max_u = max(
-                np.hypot(*deslocamento_no(no)[:2])
-                for no in nos
-            )
+            max_u = np.max(np.hypot(u[0::3], u[1::3]), initial=0.0)
 
             if max_u > 1e-14:
                 escala_auto = 0.05 * escala / max_u
 
-            for barra in barras:
-                xi, yi = barra.noi.x, barra.noi.y
-                xj, yj = barra.noj.x, barra.noj.y
+            dados_deformada = portico.calcula_deformada(40)
 
-                dx_b = xj - xi
-                dy_b = yj - yi
-                L = np.hypot(dx_b, dy_b)
-
-                if L <= 0:
-                    continue
-
-                c = dx_b / L
-                s = dy_b / L
-
-                ui = deslocamento_no(barra.noi)
-                uj = deslocamento_no(barra.noj)
-
-                # Deslocamentos globais -> locais.
-                u1 = c * ui[0] + s * ui[1]
-                v1 = -s * ui[0] + c * ui[1]
-                t1 = ui[2]
-
-                u2 = c * uj[0] + s * uj[1]
-                v2 = -s * uj[0] + c * uj[1]
-                t2 = uj[2]
-
-                r = np.linspace(0, 1, 40)
-
-                # Interpolação axial linear.
-                ua = (1-r)*u1 + r*u2
-
-                # Interpolação transversal de Hermite.
-                H1 = 1 - 3*r**2 + 2*r**3
-                H2 = L*(r - 2*r**2 + r**3)
-                H3 = 3*r**2 - 2*r**3
-                H4 = L*(-r**2 + r**3)
-
-                va = H1*v1 + H2*t1 + H3*v2 + H4*t2
-
-                dados_deformada.append(
-                    (xi, yi, c, s, L, r, ua, va)
-                )
-
+            for barra, coordenadas, deslocamentos in dados_deformada:
                 linha, = ax.plot(
                     [], [],
                     color="crimson",
@@ -1768,15 +1704,9 @@ class Visualizacao:
             for linha, dados in zip(
                 linhas_deformada, dados_deformada
             ):
-                xi, yi, c, s, L, r, ua, va = dados
-
-                xl = L*r + fator*ua
-                yl = fator*va
-
-                x = xi + c*xl - s*yl
-                y = yi + s*xl + c*yl
-
-                linha.set_data(x, y)
+                barra, coordenadas, deslocamentos = dados
+                pontos = coordenadas + fator*deslocamentos
+                linha.set_data(pontos[:, 0], pontos[:, 1])
 
             fig.canvas.draw_idle()
 
@@ -2685,67 +2615,12 @@ class Visualizacao:
         escala_max = max(escala_inicial * 5.0, 1.0)
         linhas = []
 
-        def coordenadas_deformadas(barra, fator):
-            xi, yi = barra.noi.x, barra.noi.y
-            xj, yj = barra.noj.x, barra.noj.y
+        dados_deformada = self.modelo.portico.calcula_deformada(pontos_por_barra)
 
-            dx, dy = xj - xi, yj - yi
-            L = np.hypot(dx, dy)
-
-            if L <= 0:
-                raise ValueError("Barra com comprimento nulo.")
-
-            c, s = dx / L, dy / L
-
-            def deslocamentos(no):
-                i = 3 * (no.num - 1)
-                return u[i:i + 3]
-
-            ui = deslocamentos(barra.noi)
-            uj = deslocamentos(barra.noj)
-
-            # Transformação global -> local.
-            ui_local = np.array([
-                c * ui[0] + s * ui[1],
-                -s * ui[0] + c * ui[1],
-                ui[2]
-            ])
-            uj_local = np.array([
-                c * uj[0] + s * uj[1],
-                -s * uj[0] + c * uj[1],
-                uj[2]
-            ])
-
-            u1, v1, t1 = ui_local
-            u2, v2, t2 = uj_local
-
-            r = np.linspace(0.0, 1.0, pontos_por_barra)
-
-            # Interpolação axial linear.
-            ua = (1.0 - r) * u1 + r * u2
-
-            # Funções de forma de Hermite.
-            H1 = 1 - 3*r**2 + 2*r**3
-            H2 = L * (r - 2*r**2 + r**3)
-            H3 = 3*r**2 - 2*r**3
-            H4 = L * (-r**2 + r**3)
-
-            va = H1*v1 + H2*t1 + H3*v2 + H4*t2
-
-            # Coordenadas locais deformadas.
-            xl = L*r + fator*ua
-            yl = fator*va
-
-            # Transformação local -> global.
-            x = xi + c*xl - s*yl
-            y = yi + s*xl + c*yl
-
-            return x, y
-
-        for barra in barras:
-            x, y = coordenadas_deformadas(barra, escala_inicial)
+        for barra, coordenadas, deslocamentos in dados_deformada:
+            pontos = coordenadas + escala_inicial*deslocamentos
             linha, = ax.plot(
-                x, y,
+                pontos[:, 0], pontos[:, 1],
                 color="crimson",
                 linewidth=2.0,
                 zorder=5
@@ -2767,9 +2642,10 @@ class Visualizacao:
         )
 
         def atualizar(fator):
-            for barra, linha in zip(barras, linhas):
-                x, y = coordenadas_deformadas(barra, fator)
-                linha.set_data(x, y)
+            for linha, dados in zip(linhas, dados_deformada):
+                barra, coordenadas, deslocamentos = dados
+                pontos = coordenadas + fator*deslocamentos
+                linha.set_data(pontos[:, 0], pontos[:, 1])
 
             fig.canvas.draw_idle()
 

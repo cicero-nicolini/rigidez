@@ -89,6 +89,74 @@ class Estrutura:
         
         self.u = np.linalg.inv(self.k01)@ self.fnos
 
+    def calcula_deformada(self, pontos_por_barra:int = 40) -> list:
+        """
+        Calcula os deslocamentos ao longo das barras da estrutura.
+
+        Args:
+
+            pontos_por_barra: número de pontos de interpolação por barra
+
+        Returns:
+
+            Lista de tuplas com a barra, as coordenadas originais e os
+            deslocamentos interpolados no sistema global (matrizes n x 2).
+
+        Raises:
+
+            ValueError: número de pontos inferior a dois, vetor de
+                deslocamentos inválido ou barra com comprimento nulo.
+        """
+
+        if pontos_por_barra < 2:
+            raise ValueError("Número de pontos inferior a dois.")
+
+        u = np.asarray(self.u, dtype=float).ravel()
+        if u.size != 3*self.nnos or not np.all(np.isfinite(u)):
+            raise ValueError("Vetor de deslocamentos inválido ou incompatível.")
+
+        deformada = []
+
+        # Coordenada adimensional ao longo da barra
+        r = np.linspace(0.0, 1.0, pontos_por_barra)
+
+        for barra in self.barras:
+            barra.comprimento_barra()
+            L = barra.L
+            if L <= 0.0:
+                raise ValueError("Barra com comprimento nulo.")
+
+            barra.monta_q()
+            barra.calcula_r()
+
+            # Transforma os deslocamentos nodais para o sistema local
+            ul = barra.r @ u[barra.q]
+            u1, v1, t1, u2, v2, t2 = ul
+
+            # Interpolação linear dos deslocamentos axiais
+            ua = (1-r)*u1 + r*u2
+
+            # Funções de interpolação cúbica de Hermite
+            H1 = 1 - 3*r**2 + 2*r**3
+            H2 = L*(r - 2*r**2 + r**3)
+            H3 = 3*r**2 - 2*r**3
+            H4 = L*(-r**2 + r**3)
+
+            # Interpolação dos deslocamentos transversais
+            va = H1*v1 + H2*t1 + H3*v2 + H4*t2
+
+            # Coordenadas originais no sistema global
+            R = barra.r[:2,:2]
+            pi = np.array([barra.noi.x, barra.noi.y])
+            coordenadas = pi + np.column_stack((L*r, np.zeros_like(r))) @ R
+
+            # Transforma os deslocamentos interpolados para o sistema global
+            deslocamentos = np.column_stack((ua, va)) @ R
+
+            deformada.append((barra, coordenadas, deslocamentos))
+
+        return deformada
+
     def calcula_solicitacoes_internas_nodais(self) -> None:
         """Calcula as forças no sistema local para as barras = solicitações."""
         
