@@ -771,1076 +771,23 @@ class Visualizacao:
         escala = max(dx, dy, 1.0)
         tam_apoio = 0.018 * escala
 
-        # ------------------------------------------------------------------
-        # GEOMETRIA DA VIGA E ABERTURAS
-        # ------------------------------------------------------------------
-        # Silhueta única da viga e dos pilares, com uma ou várias aberturas.
-        # Compatível com Modelo (abertura única) e ModeloFuros.
-        geometria_viga = []
-        m = self.modelo
-        parametros = ('ap1', 'ap2', 'l', 'h')
-        if all(hasattr(m, nome) for nome in parametros):
-            from matplotlib.path import Path as MplPath
-            from matplotlib.patches import PathPatch
+        geometria_viga, m = self._desenhar_contorno(ax, nos)
 
-            h = float(m.h)
-            ap1, ap2 = float(m.ap1), float(m.ap2)
-            x0 = ap1 / 2.0
-            x1 = x0 + float(m.l)
-            y0, y1 = -h / 2.0, h / 2.0
+        grupos = self._desenhar_modelo_estrutural(ax, barras, nos, tam_apoio, xmax, xmin, xs, ys)
 
-            # Os furos têm coordenadas relativas ao início do vão.
-            if hasattr(m, 'furos'):
-                furos = list(m.furos)
-            elif all(hasattr(m, k) for k in ('lf', 'b', 'a', 'c')):
-                furos = [m]
-            else:
-                furos = []
+        cargas = self._desenhar_cargas_distribuidas(ax, escala, grupos)
 
-            if h > 0 and ap1 > 0 and ap2 > 0 and x1 > x0:
-                apoio_esq = min(nos, key=lambda n: n.x)
-                apoio_dir = max(nos, key=lambda n: n.x)
-                xl = float(apoio_esq.x) - ap1 / 2.0
-                xle = float(apoio_esq.x) + ap1 / 2.0
-                xrd = float(apoio_dir.x) - ap2 / 2.0
-                xr = float(apoio_dir.x) + ap2 / 2.0
-                ye_inf = float(apoio_esq.y) - h
-                ye_sup = float(apoio_esq.y) + h
-                yd_inf = float(apoio_dir.y) - h
-                yd_sup = float(apoio_dir.y) + h
+        self._desenhar_cargas_nodais(ax, escala, grupos, nos)
 
-                contorno = [
-                    (xl, ye_inf), (xl, ye_sup),
-                    (xle, ye_sup), (xle, y1),
-                    (xrd, y1), (xrd, yd_sup),
-                    (xr, yd_sup), (xr, yd_inf),
-                    (xrd, yd_inf), (xrd, y0),
-                    (xle, y0), (xle, ye_inf),
-                ]
+        solicitacoes, trechos, escala_momento, atualizar_momento = self._desenhar_momento_fletor(ax, barras, cargas, decalagem_automatica, escala, fig, grupos)
 
-                def caminho_fechado(pontos):
-                    return MplPath(
-                        pontos + [pontos[0]],
-                        [MplPath.MOVETO] + [MplPath.LINETO] * (len(pontos)-1)
-                        + [MplPath.CLOSEPOLY]
-                    )
+        diagramas_nv = self._desenhar_esforcos_normal_cortante(ax, escala, fig, grupos, solicitacoes, trechos)
 
-                caminho = caminho_fechado(contorno)
-                for furo in furos:
-                    xc = x0 + float(furo.lf)
-                    xa = xc - float(furo.b) / 2.0
-                    xb = xc + float(furo.b) / 2.0
-                    ya = y0 + float(furo.c)
-                    yb = ya + float(furo.a)
-                    if not (xle < xa < xb < xrd and y0 < ya < yb < y1):
-                        continue
-                    # Contorno externo é horário; os vazios são anti-horários.
-                    abertura = caminho_fechado([
-                        (xa, ya), (xb, ya), (xb, yb), (xa, yb)
-                    ])
-                    caminho = MplPath.make_compound_path(caminho, abertura)
+        diagramas_armadura = self._desenhar_diagramas_armaduras(ax, barras, escala, fig, grupos, trechos)
 
-                bloco = PathPatch(
-                    caminho, facecolor='#808080', edgecolor='#777777',
-                    linewidth=0.8, alpha=0.20, zorder=0.2
-                )
-                ax.add_patch(bloco)
-                geometria_viga.append(bloco)
+        linhas_deformada, escala_auto, atualizar_deformada, deslocamento_no = self._desenhar_deformada_viga(ax, escala, fig, nos)
 
-        # ------------------------------------------------------------------
-        # GRUPOS DE ARTISTAS E MODELO ESTRUTURAL
-        # ------------------------------------------------------------------
-        grupos = {'Modelo estrutural': [], 'Nós': [], 'Números dos nós': [], 'Números das barras': [],
-                  'Apoios': [], 'Cargas distribuídas': [], 'Forças nodais': [], 'Momentos nodais': []}
-
-        for barra in barras:
-            xi, yi = barra.noi.x, barra.noi.y
-            xj, yj = barra.noj.x, barra.noj.y
-            linha_modelo, = ax.plot([xi, xj], [yi, yj], color='#2866a6', lw=2.1, zorder=2)
-            grupos['Modelo estrutural'].append(linha_modelo)
-            # Deslocamento perpendicular à barra em pontos de tela.
-            vx, vy = xj - xi, yj - yi
-            comprimento = (vx * vx + vy * vy) ** 0.5
-            if comprimento:
-                ox, oy = -vy / comprimento, vx / comprimento
-            else:
-                ox, oy = 0, 1
-            anot = ax.annotate(str(barra.num), ((xi+xj)/2, (yi+yj)/2),
-                               xytext=(9*ox, 9*oy), textcoords='offset points',
-                               ha='center', va='center', fontsize=8,
-                               color='#b14e20', zorder=5)
-            grupos['Números das barras'].append(anot)
-
-        pontos = ax.scatter(xs, ys, s=19, color='#153956', zorder=4)
-        grupos['Nós'].append(pontos)
-        for no in nos:
-            anot = ax.annotate(str(no.num), (no.x, no.y),
-                               xytext=(4, -12), textcoords='offset points',
-                               fontsize=7.5, color='#333333', zorder=5)
-            grupos['Números dos nós'].append(anot)
-
-        for no in nos:
-            tx, ty, rz = bool(no.Tx), bool(no.Ty), bool(no.Rz)
-            if not (tx or ty or rz):
-                continue
-            artistas = []
-            if tx and ty and rz:  # engaste: linha vertical hachurada (opção 3)
-                # A hachura fica do lado externo do vão, tanto à esquerda
-                # quanto à direita. Todas as linhas pertencem ao grupo Apoios.
-                centro_x = (xmin + xmax) / 2.0
-                lado_externo = -1 if no.x <= centro_x else 1
-                meia_altura = 1.5 * tam_apoio
-                linha, = ax.plot(
-                    [no.x, no.x],
-                    [no.y - meia_altura, no.y + meia_altura],
-                    color='black', linewidth=2.2, zorder=6,
-                    solid_capstyle='butt'
-                )
-                artistas.append(linha)
-                n_hachuras = 8
-                passo = 2 * meia_altura / (n_hachuras + 1)
-                for i in range(1, n_hachuras + 1):
-                    y0 = no.y - meia_altura + i * passo
-                    # Traços diagonais apenas para fora da viga.
-                    traco, = ax.plot(
-                        [no.x, no.x + lado_externo * 0.55 * tam_apoio],
-                        [y0, y0 - 0.55 * passo],
-                        color='black', linewidth=1.1, zorder=6
-                    )
-                    artistas.append(traco)
-            elif tx and ty:  # apoio articulado
-                artistas.append(Polygon([(no.x, no.y),
-                                          (no.x-tam_apoio, no.y-tam_apoio),
-                                          (no.x+tam_apoio, no.y-tam_apoio)],
-                                         closed=True, facecolor='#cccccc',
-                                         edgecolor='black', zorder=6))
-            elif ty and not tx:  # apoio móvel vertical
-                artistas.append(Polygon([(no.x, no.y),
-                                          (no.x-tam_apoio, no.y-tam_apoio*.8),
-                                          (no.x+tam_apoio, no.y-tam_apoio*.8)],
-                                         closed=True, facecolor='#dddddd',
-                                         edgecolor='black', zorder=6))
-                for s in (-0.5, 0.5):
-                    artistas.append(Circle((no.x+s*tam_apoio,
-                                            no.y-1.03*tam_apoio),
-                                           radius=tam_apoio*.16,
-                                           facecolor='white', edgecolor='black',
-                                           zorder=6))
-            elif tx and not ty:  # apoio móvel horizontal
-                artistas.append(Polygon([(no.x, no.y),
-                                          (no.x-tam_apoio*.8, no.y-tam_apoio),
-                                          (no.x-tam_apoio*.8, no.y+tam_apoio)],
-                                         closed=True, facecolor='#dddddd',
-                                         edgecolor='black', zorder=6))
-            elif rz:
-                artistas.append(Rectangle((no.x-tam_apoio*.25,
-                                            no.y-tam_apoio*.25),
-                                           tam_apoio*.5, tam_apoio*.5,
-                                           fill=False, edgecolor='#555555', zorder=6))
-            # Linhas do engaste já foram adicionadas por ax.plot().
-            # Os demais símbolos são patches e precisam de ax.add_patch().
-            from matplotlib.patches import Patch
-            for artista in artistas:
-                if isinstance(artista, Patch):
-                    ax.add_patch(artista)
-            grupos['Apoios'].extend(artistas)
-
-        # ------------------------------------------------------------------
-        # CARREGAMENTOS DISTRIBUÍDOS
-        # ------------------------------------------------------------------
-        # Cargas distribuídas: Py local, positivo no eixo y local da barra.
-
-        # Cargas distribuídas nos eixos locais das barras.
-        # A representação gráfica não altera os carregamentos do modelo.
-        from matplotlib.patches import FancyArrowPatch, Arc
-
-        cargas = getattr(self.modelo, 'carregamentos', [])
-        segmentos = []
-
-        cor_carga = '#b83280'
-        comprimento_seta = escala * 0.045
-        espacamento = escala * 0.035
-
-        for carga in cargas:
-            if not all(hasattr(carga, k) for k in
-                       ('w1', 'w2', 'lw', 'a', 'barra')):
-                continue
-
-            barra = carga.barra
-
-            xi, yi = barra.noi.x, barra.noi.y
-            xj, yj = barra.noj.x, barra.noj.y
-
-            vx = xj - xi
-            vy = yj - yi
-            L = (vx**2 + vy**2)**0.5
-
-            if L <= 0 or carga.lw <= 0:
-                continue
-
-            ex, ey = vx / L, vy / L
-            nx, ny = -ey, ex
-
-            inicio = max(0.0, carga.a)
-            fim = min(L, carga.a + carga.lw)
-
-            if fim <= inicio:
-                continue
-
-            def intensidade(s):
-                return carga.w1 + (
-                    carga.w2 - carga.w1
-                ) * (s - carga.a) / carga.lw
-
-            # Número de setas proporcional ao comprimento carregado.
-            n = max(2, int((fim - inicio) / espacamento) + 1)
-
-            for i in range(n):
-                s = inicio + (fim - inicio) * i / (n - 1)
-                w = intensidade(s)
-
-                if abs(w) < 1e-12:
-                    continue
-
-                x = xi + ex * s
-                y = yi + ey * s
-
-                sinal = 1 if w > 0 else -1
-                altura = comprimento_seta * sinal
-
-                origem = (x + nx * altura, y + ny * altura)
-
-                seta = FancyArrowPatch(
-                    origem, (x, y),
-                    arrowstyle='-|>',
-                    mutation_scale=9,
-                    linewidth=1.0,
-                    color=cor_carga,
-                    zorder=3
-                )
-
-                ax.add_patch(seta)
-                grupos['Cargas distribuídas'].append(seta)
-
-            # Linha que une as origens das setas.
-            w_ini = intensidade(inicio)
-            w_fim = intensidade(fim)
-
-            def ponto_externo(s, w):
-                x = xi + ex * s
-                y = yi + ey * s
-                sinal = 1 if w > 0 else -1
-                return (
-                    x + nx * comprimento_seta * sinal,
-                    y + ny * comprimento_seta * sinal
-                )
-
-            p1 = ponto_externo(inicio, w_ini)
-            p2 = ponto_externo(fim, w_fim)
-
-            linha, = ax.plot(
-                [p1[0], p2[0]],
-                [p1[1], p2[1]],
-                color=cor_carga,
-                linewidth=1.0,
-                zorder=3
-            )
-            grupos['Cargas distribuídas'].append(linha)
-
-            # Dados para agrupar as etiquetas das cargas.
-            if abs(carga.w1 - carga.w2) < 1e-10:
-                segmentos.append({
-                    'x': (xi + xj) / 2,
-                    'y': (yi + yj) / 2,
-                    'valor': carga.w1,
-                    'nx': nx,
-                    'ny': ny
-                })
-            else:
-                xm = (p1[0] + p2[0]) / 2
-                ym = (p1[1] + p2[1]) / 2
-                etiqueta = ax.annotate(
-                    f'q: {carga.w1:g} a {carga.w2:g}',
-                    (xm, ym),
-                    xytext=(0, 9),
-                    textcoords='offset points',
-                    ha='center',
-                    fontsize=8,
-                    color=cor_carga
-                )
-                grupos['Cargas distribuídas'].append(etiqueta)
-
-        # Agrupa etiquetas de cargas uniformes em faixas horizontais.
-        # Uma etiqueta por faixa de mesma intensidade e orientação.
-        grupos_etiquetas = {}
-
-        for seg in segmentos:
-            chave = (
-                round(seg['y'], 5),
-                round(seg['valor'], 8),
-                round(seg['nx'], 5),
-                round(seg['ny'], 5)
-            )
-            grupos_etiquetas.setdefault(chave, []).append(seg)
-
-        for chave, itens in grupos_etiquetas.items():
-            xmedio = sum(s['x'] for s in itens) / len(itens)
-            ymedio = sum(s['y'] for s in itens) / len(itens)
-            valor = itens[0]['valor']
-
-            nx = itens[0]['nx']
-            ny = itens[0]['ny']
-            sinal = 1 if valor > 0 else -1
-
-            posicao = (
-                xmedio + nx * sinal * comprimento_seta * 1.25,
-                ymedio + ny * sinal * comprimento_seta * 1.25
-            )
-
-            etiqueta = ax.annotate(
-                f'q = {valor:g}',
-                posicao,
-                fontsize=9,
-                fontweight='bold',
-                color=cor_carga,
-                ha='center',
-                va='center',
-                zorder=5
-            )
-
-            grupos['Cargas distribuídas'].append(etiqueta)
-
-        # ------------------------------------------------------------------
-        # FORÇAS E MOMENTOS NODAIS
-        # ------------------------------------------------------------------
-        # Forças nodais em coordenadas globais.
-        for no in nos:
-            for valor, ux, uy, desloc in ((no.Fx, 1, 0, (0,12)), (no.Fy, 0, 1, (12,0))):
-                if abs(valor) < 1e-12:
-                    continue
-                sinal = 1 if valor > 0 else -1
-                tamanho = escala*.065
-                origem = (no.x-ux*sinal*tamanho, no.y-uy*sinal*tamanho)
-                seta = FancyArrowPatch(origem, (no.x,no.y), arrowstyle='-|>',
-                                        mutation_scale=12, lw=1.5,
-                                        color='#198754', zorder=7)
-                ax.add_patch(seta)
-                grupos['Forças nodais'].append(seta)
-                anot = ax.annotate(f'{valor:g}', origem, xytext=desloc,
-                                   textcoords='offset points', fontsize=8,
-                                   color='#198754', ha='center')
-                grupos['Forças nodais'].append(anot)
-            if abs(no.Mz) > 1e-12:
-                raio = escala*.027
-                arco = Arc((no.x,no.y), 2*raio, 2*raio, theta1=25, theta2=315,
-                           color='#b8860b', lw=1.5, zorder=7)
-                ax.add_patch(arco)
-                grupos['Momentos nodais'].append(arco)
-                sinal = 1 if no.Mz > 0 else -1
-                ang = 315 if sinal > 0 else 25
-                import math
-                t = math.radians(ang)
-                ponta = (no.x+raio*math.cos(t), no.y+raio*math.sin(t))
-                tang = (-math.sin(t)*sinal, math.cos(t)*sinal)
-                seta = FancyArrowPatch((ponta[0]-tang[0]*raio*.35,
-                                        ponta[1]-tang[1]*raio*.35), ponta,
-                                        arrowstyle='-|>', mutation_scale=11,
-                                        color='#b8860b', zorder=8)
-                ax.add_patch(seta)
-                grupos['Momentos nodais'].append(seta)
-                anot = ax.annotate(f'M={no.Mz:g}', (no.x,no.y),
-                                   xytext=(12,15), textcoords='offset points',
-                                   fontsize=8, color='#b8860b')
-                grupos['Momentos nodais'].append(anot)
-
-        # ============================================================
-        # DIAGRAMA DE MOMENTO FLETOR
-        # ============================================================
-        artistas_momento = []
-        etiquetas_momento = []
-        dados_momento = []
-        extremos = []
-        solicitacoes = self.modelo.portico.calcula_solicitacoes_internas(cargas)
-        # Mantém os esforços das barras fictícias ocultos na apresentação.
-        solicitacoes = [(b, x, np.zeros_like(N), np.zeros_like(V), np.zeros_like(M))
-                        if getattr(b, "ficticia", False) else (b, x, N, V, M)
-                        for b, x, N, V, M in solicitacoes]
-        for barra, x_local, N, V, M in solicitacoes:
-            xi, yi = barra.noi.x, barra.noi.y
-            dx_b = barra.noj.x - xi
-            dy_b = barra.noj.y - yi
-            L = np.hypot(dx_b, dy_b)
-            if L <= 0:
-                continue
-            c, s = dx_b/L, dy_b/L
-            dados_momento.append((barra, xi, yi, c, s, x_local, M))
-            if not getattr(barra, 'ficticia', False):
-                extremos.extend((float(M[k]), barra.num, float(x_local[k]))
-                                for k in (np.argmin(M), np.argmax(M)))
-
-        dados_decalados = calcula_momentos_decalados(
-            dados_momento, decalagem_automatica,
-            self.decalagem_cm if self._decalagem_manual else None)
-
-        Mmax = max((np.max(np.abs(d[6])) for d in dados_momento), default=0.0)
-        escala_momento = 0.06 * escala / Mmax if Mmax > 1e-12 else 1.0
-        objetos_momento = []
-        etiquetas_extremos = []
-        pontos_rotulados = set()
-        extremos_ordenados = sorted(extremos, key=lambda item: item[0])
-        minimo_global = extremos_ordenados[0] if extremos_ordenados else None
-        maximo_global = extremos_ordenados[-1] if extremos_ordenados else None
-
-        objetos_decalados = []
-        artistas_decalados = []
-        for indice, (barra, xi, yi, c, s, x_local, M) in enumerate(dados_momento):
-            x_base = xi + c*x_local
-            y_base = yi + s*x_local
-            linha, = ax.plot([], [], color='#16803c', lw=1.8,
-                             zorder=7, visible=False)
-            preenchimento = ax.fill([], [], color='#16803c',
-                                     alpha=0.13, zorder=3,
-                                     visible=False)[0]
-            artistas_momento.extend((linha, preenchimento))
-            objetos_momento.append((linha, preenchimento,
-                                     x_base, y_base, c, s, M))
-            if not getattr(barra, 'ficticia', False) and abs(s) < 1e-7:
-                for envoltoria in dados_decalados[indice]:
-                    linha_dec, = ax.plot([], [], color='#d97706', lw=1.5,
-                                         linestyle=(0, (4, 3)), zorder=9,
-                                         visible=False)
-                    artistas_decalados.append(linha_dec)
-                    objetos_decalados.append((linha_dec, x_base, y_base,
-                                              c, s, envoltoria))
-
-        trechos = self._trechos_geometricos(barras)
-        momentos_por_barra = {id(b): (float(m[0]), float(m[-1]))
-                              for b, _, _, _, _, _, m in dados_momento}
-        rotulos_m = self._pontos_rotulo_trechos(trechos, momentos_por_barra)
-        for no, valor, barra in rotulos_m:
-            c = (barra.noj.x-barra.noi.x)/barra.L
-            sn = (barra.noj.y-barra.noi.y)/barra.L
-            xb, yb = float(no.x), float(no.y)
-            anot = ax.annotate(f'{valor:.3g}', (xb, yb),
-                               xytext=(5, 8), textcoords='offset points',
-                               fontsize=7, color='#126a32', visible=False, zorder=10)
-            etiquetas_momento.append((anot, xb, yb, c, sn, valor))
-
-        # Extremos globais continuam disponíveis no controle independente.
-        candidatos = [(float(M[k]), barra, float(x_local[k]))
-                      for barra, _, _, _, _, x_local, M in dados_momento
-                      if not getattr(barra, 'ficticia', False)
-                      for k in (np.argmin(M), np.argmax(M))]
-        if candidatos:
-            for nome, item in (('Mmín', min(candidatos, key=lambda r: r[0])),
-                               ('Mmáx', max(candidatos, key=lambda r: r[0]))):
-                valor, barra, x_local = item
-                c = (barra.noj.x-barra.noi.x)/barra.L
-                sn = (barra.noj.y-barra.noi.y)/barra.L
-                xb = barra.noi.x + c*x_local
-                yb = barra.noi.y + sn*x_local
-                anot = ax.annotate(f'{nome} = {valor:.4g}', (xb, yb),
-                                   xytext=(9, -15 if valor >= 0 else 12),
-                                   textcoords='offset points', fontsize=8,
-                                   fontweight='bold', color='#126a32',
-                                   bbox=dict(boxstyle='round,pad=0.2',
-                                             facecolor='white', alpha=0.85,
-                                             edgecolor='none'),
-                                   visible=False, zorder=12)
-                etiquetas_extremos.append((anot, xb, yb, c, sn, valor))
-
-        def atualizar_momento(fator):
-            for linha, preenchimento, xb, yb, c, s, M in objetos_momento:
-                xd = xb + s*fator*M
-                yd = yb - c*fator*M
-                linha.set_data(xd, yd)
-                preenchimento.set_xy(np.column_stack((
-                    np.r_[xb, xd[::-1]], np.r_[yb, yd[::-1]])))
-            for linha, xb, yb, c, s, envoltoria in objetos_decalados:
-                linha.set_data(xb + s*fator*envoltoria,
-                               yb - c*fator*envoltoria)
-            for anot, xb, yb, c, s, valor in (
-                    etiquetas_momento + etiquetas_extremos):
-                anot.xy = (xb + s*fator*valor, yb - c*fator*valor)
-            fig.canvas.draw_idle()
-
-        atualizar_momento(escala_momento)
-        grupos['Momento fletor'] = artistas_momento
-        grupos['Diagrama decalado'] = artistas_decalados
-        grupos['Valores dos momentos'] = [item[0] for item in etiquetas_momento]
-        grupos['Extremos do momento'] = [item[0] for item in etiquetas_extremos]
-
-        if extremos:
-            maximo = max(extremos, key=lambda item: item[0])
-            minimo = min(extremos, key=lambda item: item[0])
-            texto_extremos = (
-                f'Mmáx = {maximo[0]:.4g} (barra {maximo[1]}, {maximo[2]})\n'
-                f'Mmín = {minimo[0]:.4g} (barra {minimo[1]}, {minimo[2]})'
-            )
-        else:
-            texto_extremos = 'Momentos indisponíveis'
-
-        # ============================================================
-        # DIAGRAMAS DE ESFORCO NORMAL E CORTANTE
-        # ============================================================
-        diagramas_nv = {}
-        for tipo, componentes, cor in (
-            ('Esforço normal', (0, 3), '#7c3aed'),
-            ('Esforço cortante', (1, 4), '#e07b18'),
-        ):
-            dados = []
-            for barra, x, N, V, M in solicitacoes:
-                xi, yi = barra.noi.x, barra.noi.y
-                vx = barra.noj.x - xi
-                vy = barra.noj.y - yi
-                L = np.hypot(vx, vy)
-                if L <= 0:
-                    continue
-                q = N if componentes == (0, 3) else V
-                dados.append((barra, xi, yi, vx/L, vy/L, x, q))
-
-            qmax = max((np.max(np.abs(d[6])) for d in dados), default=0.0)
-            fator_auto = 0.06 * escala / qmax if qmax > 1e-12 else 1.0
-            objetos, etiquetas, pontos_vistos = [], [], set()
-            for barra, xi, yi, c, s, x, q in dados:
-                xb = xi + c*x
-                yb = yi + s*x
-                linha, = ax.plot([], [], color=cor, lw=1.8, zorder=7,
-                                 visible=False)
-                preenchimento = ax.fill([], [], color=cor, alpha=0.13,
-                                         zorder=3, visible=False)[0]
-                objetos.append((linha, preenchimento, xb, yb, c, s, q))
-            valores_nv = {id(b): (float(q[0]), float(q[-1]))
-                          for b, _, _, _, _, _, q in dados}
-            for no, valor, barra in self._pontos_rotulo_trechos(trechos, valores_nv):
-                c = (barra.noj.x-barra.noi.x)/barra.L
-                sn = (barra.noj.y-barra.noi.y)/barra.L
-                xb, yb = float(no.x), float(no.y)
-                anot = ax.annotate(f'{valor:.3g}', (xb, yb),
-                                   xytext=(5, 8), textcoords='offset points',
-                                   fontsize=7, color=cor, visible=False, zorder=10)
-                etiquetas.append((anot, xb, yb, c, sn, valor))
-
-            def atualizar(fator, objetos=objetos, etiquetas=etiquetas):
-                for linha, preenchimento, xb, yb, c, s, q in objetos:
-                    xd = xb + s*fator*q
-                    yd = yb - c*fator*q
-                    linha.set_data(xd, yd)
-                    preenchimento.set_xy(np.column_stack((
-                        np.r_[xb, xd[::-1]], np.r_[yb, yd[::-1]])))
-                for anot, xb, yb, c, s, valor in etiquetas:
-                    anot.xy = (xb + s*fator*valor, yb - c*fator*valor)
-                fig.canvas.draw_idle()
-
-            atualizar(fator_auto)
-            grupos[tipo] = [a for linha, preenchimento, *_ in objetos
-                            for a in (linha, preenchimento)]
-            grupos['Valores ' + ('N' if tipo == 'Esforço normal' else 'V')] = [
-                item[0] for item in etiquetas]
-            diagramas_nv[tipo] = {
-                'atualizar': atualizar,
-                'fator': fator_auto,
-                'etiquetas': etiquetas,
-                'nome_valores': 'Valores ' + ('N' if tipo == 'Esforço normal' else 'V'),
-            }
-
-        # ============================================================
-        # ARMADURAS: pontos i e j ligados por retas.
-        # ASL acompanha o sinal do momento em cada extremidade:
-        # M negativo -> acima (barra horizontal i->j); M positivo -> abaixo.
-        # ASL2 usa o sentido oposto ao ASL em cada ponto.
-        # Um unico controle e escala para ambas.
-        # ============================================================
-        diagramas_armadura = {}
-        configuracoes_armadura = (
-            ('ASL', 'Armadura longitudinal', 'Valores armadura longitudinal',
-             '#087e8b', +1),
-            ('ASL2', 'Armadura longitudinal', 'Valores armadura longitudinal',
-             '#1f9cc1', -1),
-            ('ASW_S', 'Armadura transversal', 'Valores armadura transversal',
-             '#b23a48', +1),
-        )
-        dados_armadura = {}
-        for atributo, titulo, nome_valores, cor, sentido in configuracoes_armadura:
-            dados = []
-            for barra in barras:
-                if getattr(barra, "ficticia", False):
-                    continue
-                bruto = getattr(barra, atributo, None)
-                if bruto is None:
-                    continue
-                valores = np.asarray(bruto, dtype=float).ravel()
-                if valores.size != 2:
-                    raise ValueError(
-                        f'Barra {barra.num}: {atributo} deve ter dois valores (i, j).')
-                if not np.all(np.isfinite(valores)):
-                    continue
-                # ASL2 ausente ou nulo nao gera diagrama.
-                if atributo == 'ASL2' and not np.any(np.abs(valores) > 1e-12):
-                    continue
-                xi, yi = barra.noi.x, barra.noi.y
-                vx, vy = barra.noj.x - xi, barra.noj.y - yi
-                L = np.hypot(vx, vy)
-                if L <= 0:
-                    continue
-                # Sinais do momento interno nos pontos i e j, conforme
-                # a convencao ja utilizada no diagrama de momento fletor.
-                if atributo in ('ASL', 'ASL2'):
-                    fl = np.asarray(barra.fl, dtype=float).ravel()
-                    if fl.size < 6:
-                        raise ValueError(
-                            f'Barra {barra.num}: fl deve ter 6 componentes.')
-                    momentos = np.array([-fl[2], fl[5]], dtype=float)
-                    sentidos = np.sign(momentos)
-                    # Em M=0, conserva o lado do outro extremo da barra;
-                    # se ambos forem zero, usa o lado positivo do diagrama.
-                    if sentidos[0] == 0:
-                        sentidos[0] = sentidos[1] if sentidos[1] != 0 else 1.0
-                    if sentidos[1] == 0:
-                        sentidos[1] = sentidos[0]
-                else:
-                    sentidos = np.ones(2, dtype=float)
-                dados.append((barra, xi, yi, vx/L, vy/L, L, valores, sentidos))
-            dados_armadura[atributo] = dados
-
-        for titulo, atributos in (
-            ('Armadura longitudinal', ('ASL', 'ASL2')),
-            ('Armadura transversal', ('ASW_S',)),
-        ):
-            maior = max((float(np.max(np.abs(item[-2])))
-                         for atributo in atributos
-                         for item in dados_armadura[atributo]), default=0.0)
-            fator_auto = 0.06 * escala / maior if maior > 1e-12 else 1.0
-            objetos, etiquetas, pontos_vistos = [], [], set()
-            nome_valores = ('Valores armadura longitudinal' if
-                           titulo == 'Armadura longitudinal' else
-                           'Valores armadura transversal')
-            grupos[titulo] = []
-            grupos[nome_valores] = []
-            for atributo, grupo, _, cor, sentido in configuracoes_armadura:
-                if grupo != titulo:
-                    continue
-                for barra, xi, yi, c, sn, L, valores, sentidos_m in dados_armadura[atributo]:
-                    xb = np.array([xi, xi + c*L])
-                    yb = np.array([yi, yi + sn*L])
-                    linha, = ax.plot([], [], color=cor, lw=1.8, marker='o',
-                                     markersize=3.2, zorder=7, visible=False)
-                    preenchimento = ax.fill([], [], color=cor, alpha=0.14,
-                                             zorder=3, visible=False)[0]
-                    objetos.append((linha, preenchimento, xb, yb, c, sn,
-                                    valores, sentido*sentidos_m))
-                    grupos[titulo].extend((linha, preenchimento))
-            # Etiquetas apenas nas extremidades e nos extremos interiores
-            # de cada trecho, separadamente para cada tipo de armadura.
-            for atributo, grupo, _, cor, sentido in configuracoes_armadura:
-                if grupo != titulo:
-                    continue
-                valores_atributo = {
-                    id(barra): (float(valores[0]), float(valores[1]))
-                    for barra, _, _, _, _, _, valores, _ in dados_armadura[atributo]
-                }
-                for no, valor, barra in self._pontos_rotulo_trechos(trechos, valores_atributo):
-                    c = (barra.noj.x-barra.noi.x)/barra.L
-                    sn = (barra.noj.y-barra.noi.y)/barra.L
-                    momentos = np.asarray(barra.esforcos_exibicao, dtype=float)
-                    momento = -momentos[2] if no is barra.noi else momentos[5]
-                    sinal_ponto = float(sentido * (np.sign(momento) or 1.0)) if atributo != 'ASW_S' else 1.0
-                    xb, yb = float(no.x), float(no.y)
-                    chave = (atributo, round(xb, 5), round(yb, 5), round(valor, 8))
-                    if chave in pontos_vistos:
-                        continue
-                    pontos_vistos.add(chave)
-                    anot = ax.annotate(f'{valor:.3g}', (xb, yb),
-                                       xytext=(5, 8), textcoords='offset points',
-                                       fontsize=7, color=cor, visible=False, zorder=10)
-                    etiquetas.append((anot, xb, yb, c, sn, valor, sinal_ponto))
-                    grupos[nome_valores].append(anot)
-
-            def atualizar_armadura(fator, objetos=objetos, etiquetas=etiquetas):
-                for linha, preenchimento, xb, yb, c, sn, valores, sentidos in objetos:
-                    xd = xb + sn*fator*valores*sentidos
-                    yd = yb - c*fator*valores*sentidos
-                    linha.set_data(xd, yd)
-                    preenchimento.set_xy(np.column_stack((
-                        np.r_[xb, xd[::-1]], np.r_[yb, yd[::-1]])))
-                for anot, x0, y0, c, sn, valor, sentido in etiquetas:
-                    anot.xy = (x0 + sentido*sn*fator*valor,
-                               y0 - sentido*c*fator*valor)
-                fig.canvas.draw_idle()
-
-            atualizar_armadura(fator_auto)
-            diagramas_armadura[titulo] = {
-                'atualizar': atualizar_armadura,
-                'fator': fator_auto,
-                'nome_valores': nome_valores,
-            }
-
-        # ============================================================
-        # DEFORMADA DA ESTRUTURA
-        # ============================================================
-
-        linhas_deformada = []
-        dados_deformada = []
-        escala_auto = 1.0
-        slider = None
-
-        portico = getattr(self.modelo, "portico", None)
-
-        if portico is not None and hasattr(portico, "u"):
-            u = np.asarray(portico.u, dtype=float).ravel()
-
-            if len(u) != 3 * len(nos):
-                raise ValueError(
-                    "O vetor de deslocamentos tem dimensão incompatível."
-                )
-
-            if not np.all(np.isfinite(u)):
-                raise ValueError(
-                    "O vetor de deslocamentos contém valores inválidos."
-                )
-
-            # Deslocamentos nodais para a informação de resultados.
-            def deslocamento_no(no):
-                i = 3 * (no.num - 1)
-                return u[i:i + 3]
-
-            max_u = np.max(np.hypot(u[0::3], u[1::3]), initial=0.0)
-
-            if max_u > 1e-14:
-                escala_auto = 0.05 * escala / max_u
-
-            dados_deformada = portico.calcula_deformada(40)
-
-            for barra, coordenadas, deslocamentos in dados_deformada:
-                linha, = ax.plot(
-                    [], [],
-                    color="crimson",
-                    linewidth=2.0,
-                    zorder=8,
-                    visible=False
-                )
-
-                linhas_deformada.append(linha)
-
-        def atualizar_deformada(fator):
-            for linha, dados in zip(
-                linhas_deformada, dados_deformada
-            ):
-                barra, coordenadas, deslocamentos = dados
-                pontos = coordenadas + fator*deslocamentos
-                linha.set_data(pontos[:, 0], pontos[:, 1])
-
-            fig.canvas.draw_idle()
-
-        if linhas_deformada:
-            atualizar_deformada(escala_auto)
-
-
-
-        # ------------------------------------------------------------------
-        # DETALHAMENTO DAS ARMADURAS LONGITUDINAIS
-        # ------------------------------------------------------------------
-        # Detalhamento longitudinal: cores individuais e legenda fixa na área de desenho.
-        grupos['Detalhamento longitudinal'] = []
-        if hasattr(m, 'ap1') and hasattr(m, 'l') and hasattr(m, 'h'):
-            detalhamento = Detalhamento(m)
-            self.detalhamento = detalhamento
-            limite_x_esquerdo = float(m.ap1)/2.0
-            limite_x_direito = limite_x_esquerdo + float(m.l)
-            def calcular_detalhamento():
-                detalhamento.calcula_longitudinais(
-                    self.niveis_n1, self.niveis_n2,
-                    self.decalagem_cm if self._decalagem_manual else None,
-                    decalagem_automatica, ancoragem_automatica,
-                    ancoragem_apoios, boa_aderencia)
-                for nome in ('armaduras_longitudinais', 'armaduras_escalonadas',
-                             'armaduras_banzos', 'diagnosticos_ancoragem_apoios',
-                             'diagnosticos_ancoragem_banzos'):
-                    setattr(self, nome, getattr(detalhamento, nome))
-            calcular_detalhamento()
-            propostas = detalhamento.armaduras_longitudinais
-            propostas_banzos = detalhamento.armaduras_banzos
-            artistas_banzos = []
-            anotacoes_banzos = {}
-            todas = [*propostas, *propostas_banzos]
-            # Paleta discreta, com distinção suficiente entre as posições.
-            cores = ('#c0392b', '#21618c', '#148f77', '#8e44ad',
-                     '#b9770e', '#af145b', '#2874a6', '#6c7a21',
-                     '#7d3c98', '#a04000', '#117864', '#566573')
-            cores_por_posicao = {p.posicao: cores[i % len(cores)]
-                                 for i, p in enumerate(todas)}
-            cobrimento_esquematico = min(3.5, float(m.h) * 0.15)
-            # Faixas de detalhamento externas à geometria: uma pista por nível.
-            # Coordenadas são apenas gráficas; não alteram a posição física das barras.
-            distancia_inicial = max(48.0, float(m.h) * 0.60)
-            distancia_niveis = max(48.0, float(m.h) * 0.60)
-            def y_faixa(face, indice):
-                sinal = 1.0 if face == 'superior' else -1.0
-                return sinal * (float(m.h) / 2.0 + distancia_inicial
-                                + indice * distancia_niveis)
-
-            # Os artistas de N1/N2 são atualizados sem alterar os banzos.
-            artistas_n1_n2 = []
-            artistas_alertas_apoios = []
-
-            def atualizar_faixas_n1_n2():
-                for artista in artistas_n1_n2:
-                    artista.remove()
-                    if artista in grupos['Detalhamento longitudinal']:
-                        grupos['Detalhamento longitudinal'].remove(artista)
-                artistas_n1_n2.clear()
-                for artista in artistas_alertas_apoios:
-                    artista.remove()
-                    if artista in grupos['Detalhamento longitudinal']:
-                        grupos['Detalhamento longitudinal'].remove(artista)
-                artistas_alertas_apoios.clear()
-                calcular_detalhamento()
-                faixas = detalhamento.armaduras_escalonadas
-                novos_banzos = detalhamento.armaduras_banzos
-                for artista in artistas_banzos:
-                    artista.remove()
-                    if artista in grupos['Detalhamento longitudinal']:
-                        grupos['Detalhamento longitudinal'].remove(artista)
-                artistas_banzos.clear()
-                # Diagnóstico explícito: a rotina anterior apenas armazenava
-                # resultados, sem apresentar avisos no terminal ou no gráfico.
-                if ancoragem_automatica and ancoragem_apoios:
-                    from .ancoragem_apoios import relatorio_ancoragem_apoios
-                    relatorio_ancoragem_apoios(self.diagnosticos_ancoragem_apoios)
-                    avisos = [d for d in self.diagnosticos_ancoragem_apoios
-                              if not d.atendida_geometricamente]
-                    # Marcadores e diagnósticos são recalculados a cada
-                    # alteração dos controles de escalonamento.
-                    import math
-                    for d in avisos:
-                        g = getattr(d, 'gancho_90', None)
-                        if g is None:
-                            continue
-                        x_apoio = (limite_x_esquerdo if d.lado == 'esquerdo'
-                                   else limite_x_direito)
-                        y_apoio = (float(m.h) / 2.0 + 12.0
-                                   if d.face == 'superior'
-                                   else -float(m.h) / 2.0 - 12.0)
-                        deficit_gancho = max(0.0,
-                            float(d.lb_gancho_cm) - float(d.comprimento_disponivel_cm))
-                        if deficit_gancho > 1e-4:
-                            marcador, = ax.plot(
-                                [x_apoio], [y_apoio], marker='x', markersize=10,
-                                markeredgewidth=2.5, linestyle='None',
-                                color='red', zorder=32, visible=False)
-                            texto = ax.annotate(
-                                f'! {d.posicao}: gancho — faltam {deficit_gancho:.1f} cm',
-                                (x_apoio, y_apoio), xytext=(6, 7),
-                                textcoords='offset points', fontsize=8,
-                                color='red', weight='bold', zorder=33,
-                                visible=False)
-                            artistas_alertas_apoios.extend((marcador, texto))
-                            grupos['Detalhamento longitudinal'].extend((marcador, texto))
-                    # Alertas de insuficiência sem gancho viável.
-                    for d in avisos:
-                        if getattr(d, 'gancho_90', None) is not None:
-                            continue
-                        x_apoio = (limite_x_esquerdo if d.lado == 'esquerdo'
-                                   else limite_x_direito)
-                        y_apoio = (float(m.h) / 2.0 + 12.0
-                                   if d.face == 'superior'
-                                   else -float(m.h) / 2.0 - 12.0)
-                        deficit = max(0.0, d.lb_necessario_cm - d.comprimento_disponivel_cm)
-                        marcador, = ax.plot([x_apoio], [y_apoio], marker='x',
-                            markersize=10, markeredgewidth=2.5,
-                            linestyle='None', color='red', zorder=32, visible=False)
-                        texto = ax.annotate(
-                            f'! {d.posicao}: falta {deficit:.1f} cm',
-                            (x_apoio, y_apoio), xytext=(6, 7),
-                            textcoords='offset points', fontsize=8,
-                            color='red', weight='bold', zorder=33, visible=False)
-                        artistas_alertas_apoios.extend((marcador, texto))
-                        grupos['Detalhamento longitudinal'].extend((marcador, texto))
-                for proposta_b in novos_banzos:
-                    # Armaduras dos banzos permanecem na posição original,
-                    # junto à abertura, independentemente das pistas N1/N2.
-                    y_b = proposta_b.y_cm
-                    afast = max(3.0, min(5.0, float(m.h) * 0.07))
-                    if proposta_b.banzo == 'inferior' and proposta_b.face == 'inferior':
-                        y_b += afast
-                    elif proposta_b.banzo == 'superior' and proposta_b.face == 'superior':
-                        y_b -= afast
-                    cor_b = cores_por_posicao.get(proposta_b.posicao, '#566573')
-                    linha_b, = ax.plot(
-                        [proposta_b.inicio_cm, proposta_b.fim_cm], [y_b, y_b],
-                        color=cor_b, lw=2.6, zorder=14, visible=False)
-                    rotulo_b = ax.annotate(
-                        proposta_b.posicao,
-                        ((proposta_b.inicio_cm + proposta_b.fim_cm) / 2, y_b),
-                        xytext=(0, 10 if proposta_b.face == 'superior' else -13),
-                        textcoords='offset points', ha='center', fontsize=8,
-                        weight='bold', color=cor_b, visible=False, zorder=16,
-                        bbox=dict(facecolor='white', edgecolor='none', alpha=.85, pad=.5))
-                    artistas_banzos.extend((linha_b, rotulo_b))
-                    grupos['Detalhamento longitudinal'].extend((linha_b, rotulo_b))
-                for pos, anot in anotacoes_banzos.items():
-                    proposta_b = next((b for b in novos_banzos if b.posicao == pos), None)
-                    anot.set_text(
-                        f'{proposta_b.quantidade} {pos} {SIMBOLO_BITOLA}{proposta_b.bitola_mm:g} '
-                        f'c = {proposta_b.comprimento_geometrico_cm:.0f} cm '
-                        f'(As = {proposta_b.as_fornecida_cm2:.2f} cm²)'
-                        if proposta_b is not None else '')
-                # A continuidade nos furos preserva a origem N1/N2, mas
-                # pode produzir barras fisicamente distintas (bitola, número,
-                # comprimento ou nível). Cada tipo recebe posição própria.
-                # N1/N2 ficam reservadas às barras resistentes de base.
-                posicoes_ocupadas = {
-                    proposta.posicao for proposta in novos_banzos
-                } | {'N1', 'N2'}
-                proximo_numero = 3
-                identificacoes = {}
-                principais = {}
-
-                # Identifica primeiro as barras resistentes de base, evitando
-                # que porta-estribos de outra bitola sejam chamados de N1/N2.
-                for faixa_base in faixas:
-                    if faixa_base.nivel != 0:
-                        continue
-                    origem = faixa_base.posicao
-                    if origem not in principais:
-                        principais[origem] = (
-                            origem, faixa_base.face, faixa_base.quantidade,
-                            round(float(faixa_base.bitola_mm), 6),
-                            faixa_base.nivel,
-                            round(float(faixa_base.fim_cm - faixa_base.inicio_cm), 4),
-                        )
-
-                def posicao_da_faixa(faixa):
-                    """Numera tipos distintos sem modificar o aço calculado."""
-                    nonlocal proximo_numero
-
-                    chave = (
-                        faixa.posicao, faixa.face, faixa.quantidade,
-                        round(float(faixa.bitola_mm), 6), faixa.nivel,
-                        round(float(faixa.fim_cm - faixa.inicio_cm), 4),
-                    )
-                    if chave in identificacoes:
-                        return identificacoes[chave]
-
-                    if chave == principais.get(faixa.posicao):
-                        posicao = faixa.posicao
-                    else:
-                        while f'N{proximo_numero}' in posicoes_ocupadas:
-                            proximo_numero += 1
-                        posicao = f'N{proximo_numero}'
-                        proximo_numero += 1
-                        posicoes_ocupadas.add(posicao)
-
-                    identificacoes[chave] = posicao
-                    return posicao
-
-                # Define pistas por posição efetiva, e não apenas pelo nível
-                # teórico. Duas bitolas diferentes no mesmo nível precisam
-                # aparecer em alturas distintas para permitir sua leitura.
-                # Faixas da mesma posição compartilham a pista, inclusive
-                # quando ocupam intervalos descontínuos da viga.
-                pistas_por_face = {'inferior': {}, 'superior': {}}
-                faixas_identificadas = []
-                for faixa in faixas:
-                    posicao = posicao_da_faixa(faixa)
-                    faixas_identificadas.append((faixa, posicao))
-                    pistas = pistas_por_face[faixa.face]
-                    if posicao not in pistas:
-                        pistas[posicao] = len(pistas)
-
-                for faixa, posicao_grafica in faixas_identificadas:
-                    indice_pista = pistas_por_face[faixa.face][posicao_grafica]
-                    y_arm = y_faixa(faixa.face, indice_pista)
-                    cor = cores_por_posicao.get(
-                        faixa.posicao, '#566573'
-                    )
-                    # Desenho da própria barra na pista externa, incluindo
-                    # a dobra e a ponta vertical, sem ganchos desconectados.
-                    gancho_esq = None
-                    gancho_dir = None
-                    for diagnostico in self.diagnosticos_ancoragem_apoios:
-                        if (diagnostico.posicao == faixa.posicao
-                                and diagnostico.face == faixa.face
-                                and diagnostico.gancho_90 is not None):
-                            g = diagnostico.gancho_90
-                            extremidade = (faixa.inicio_cm if diagnostico.lado == 'esquerdo'
-                                           else faixa.fim_cm)
-                            if abs(extremidade - g.x_vertical_cm) <= 6.0:
-                                if diagnostico.lado == 'esquerdo':
-                                    gancho_esq = g
-                                else:
-                                    gancho_dir = g
-                    # A extremidade horizontal coincide com a tangência da
-                    # curva. Nunca desenhar a linha até x_vertical, pois isso
-                    # cria uma pequena ponta reta além do início do gancho.
-                    x_reto_esq = (gancho_esq.x_tangencia_cm if gancho_esq is not None
-                                  else faixa.inicio_cm)
-                    x_reto_dir = (gancho_dir.x_tangencia_cm if gancho_dir is not None
-                                  else faixa.fim_cm)
-
-                    def pontos_gancho(g, lado):
-                        """Pontos da curva do eixo da barra, da tangência à ponta."""
-                        sentido_x = -1.0 if lado == 'esquerdo' else 1.0
-                        angulos = [math.pi * i / 40 for i in range(21)]
-                        curva_x = [g.x_tangencia_cm + sentido_x * g.raio_eixo_cm * math.sin(a)
-                                   for a in angulos]
-                        curva_y = [y_arm + g.sentido_vertical * g.raio_eixo_cm * (1 - math.cos(a))
-                                   for a in angulos]
-                        return curva_x, curva_y
-
-                    pontos_x = [x_reto_esq, x_reto_dir]
-                    pontos_y = [y_arm, y_arm]
-                    if gancho_esq is not None:
-                        gx, gy = pontos_gancho(gancho_esq, 'esquerdo')
-                        pontos_x = [gancho_esq.x_vertical_cm, *reversed(gx), x_reto_dir]
-                        pontos_y = [gy[-1] + gancho_esq.sentido_vertical * gancho_esq.ponta_vertical_cm,
-                                    *reversed(gy), y_arm]
-                    if gancho_dir is not None:
-                        gx, gy = pontos_gancho(gancho_dir, 'direito')
-                        # gx[0] é exatamente a extremidade do trecho reto.
-                        pontos_x.extend(gx[1:])
-                        pontos_y.extend(gy[1:])
-                        pontos_x.append(gancho_dir.x_vertical_cm)
-                        pontos_y.append(gy[-1] + gancho_dir.sentido_vertical * gancho_dir.ponta_vertical_cm)
-                    linha, = ax.plot(pontos_x, pontos_y,
-                        color=cor, lw=2.6, zorder=12, visible=False)
-                    comprimento_corte = x_reto_dir - x_reto_esq
-                    for g in (gancho_esq, gancho_dir):
-                        if g is not None:
-                            comprimento_corte += math.pi * g.raio_eixo_cm / 2 + g.ponta_vertical_cm
-                    comprimento_corte = 5 * math.ceil((comprimento_corte - 1e-9) / 5)
-                    rotulo = ax.annotate(
-                        f'{faixa.quantidade} {posicao_grafica} {SIMBOLO_BITOLA}{faixa.bitola_mm:g} '
-                        f'C={comprimento_corte:.0f} cm',
-                        ((faixa.inicio_cm + faixa.fim_cm) / 2, y_arm),
-                        xytext=(0, 10),
-                        textcoords='offset points', ha='center', va='bottom', fontsize=8,
-                        weight='bold', color=cor, visible=linha.get_visible(),
-                        zorder=16,
-                        bbox=dict(facecolor='white', edgecolor='none', alpha=.78, pad=.5))
-                    artistas_n1_n2.extend((linha, rotulo))
-                    grupos['Detalhamento longitudinal'].extend((linha, rotulo))
-
-            atualizar_faixas_n1_n2()
-            self.armaduras_longitudinais = propostas
-
-            # A relação inferior esquerda fica reservada às armaduras dos banzos.
-            # As faixas externas já exibem posição, quantidade, bitola e comprimento.
-            for i, proposta in enumerate(propostas_banzos):
-                texto = (f'{proposta.quantidade} {proposta.posicao} '
-                         f'{SIMBOLO_BITOLA}{proposta.bitola_mm:g} '
-                         f'c = {proposta.comprimento_geometrico_cm:.0f} cm '
-                         f'(As = {proposta.as_fornecida_cm2:.2f} cm²)')
-                anot = ax.annotate(
-                    texto, xy=(0.018, 0.035), xycoords='axes fraction',
-                    xytext=(0, 12 * (len(propostas_banzos) - 1 - i)),
-                    textcoords='offset points', ha='left', va='bottom',
-                    color=cores_por_posicao[proposta.posicao],
-                    fontsize=8, family='DejaVu Sans', weight='bold',
-                    bbox=dict(facecolor='white', edgecolor='none', alpha=.88, pad=1.0),
-                    visible=False, zorder=30, annotation_clip=False)
-                grupos['Detalhamento longitudinal'].append(anot)
-                anotacoes_banzos[proposta.posicao] = anot
+        atualizar_faixas_n1_n2, artistas_n1_n2, artistas_banzos, artistas_alertas_apoios = self._desenhar_detalhamento_longitudinal(ancoragem_apoios, ancoragem_automatica, ax, boa_aderencia, decalagem_automatica, grupos, m)
 
         self._desenhar_detalhamento_transversal(ax, m, grupos)
 
@@ -2257,6 +1204,1257 @@ class Visualizacao:
 
         return fig, ax
 
+
+    def _desenhar_contorno(self, ax, nos) -> tuple:
+        """
+        Desenha o contorno da viga, pilares e aberturas.
+
+        Args:
+
+            ax: eixos Matplotlib
+            nos: lista de nós
+
+        Returns:
+
+            geometria_viga, m.
+        """
+
+        # ------------------------------------------------------------------
+        # GEOMETRIA DA VIGA E ABERTURAS
+        # ------------------------------------------------------------------
+        # Silhueta única da viga e dos pilares, com uma ou várias aberturas.
+        # Compatível com Modelo (abertura única) e ModeloFuros.
+        geometria_viga = []
+        m = self.modelo
+        parametros = ('ap1', 'ap2', 'l', 'h')
+        if all(hasattr(m, nome) for nome in parametros):
+            from matplotlib.path import Path as MplPath
+            from matplotlib.patches import PathPatch
+
+            h = float(m.h)
+            ap1, ap2 = float(m.ap1), float(m.ap2)
+            x0 = ap1 / 2.0
+            x1 = x0 + float(m.l)
+            y0, y1 = -h / 2.0, h / 2.0
+
+            # Os furos têm coordenadas relativas ao início do vão.
+            if hasattr(m, 'furos'):
+                furos = list(m.furos)
+            elif all(hasattr(m, k) for k in ('lf', 'b', 'a', 'c')):
+                furos = [m]
+            else:
+                furos = []
+
+            if h > 0 and ap1 > 0 and ap2 > 0 and x1 > x0:
+                apoio_esq = min(nos, key=lambda n: n.x)
+                apoio_dir = max(nos, key=lambda n: n.x)
+                xl = float(apoio_esq.x) - ap1 / 2.0
+                xle = float(apoio_esq.x) + ap1 / 2.0
+                xrd = float(apoio_dir.x) - ap2 / 2.0
+                xr = float(apoio_dir.x) + ap2 / 2.0
+                ye_inf = float(apoio_esq.y) - h
+                ye_sup = float(apoio_esq.y) + h
+                yd_inf = float(apoio_dir.y) - h
+                yd_sup = float(apoio_dir.y) + h
+
+                contorno = [
+                    (xl, ye_inf), (xl, ye_sup),
+                    (xle, ye_sup), (xle, y1),
+                    (xrd, y1), (xrd, yd_sup),
+                    (xr, yd_sup), (xr, yd_inf),
+                    (xrd, yd_inf), (xrd, y0),
+                    (xle, y0), (xle, ye_inf),
+                ]
+
+                def caminho_fechado(pontos):
+                    return MplPath(
+                        pontos + [pontos[0]],
+                        [MplPath.MOVETO] + [MplPath.LINETO] * (len(pontos)-1)
+                        + [MplPath.CLOSEPOLY]
+                    )
+
+                caminho = caminho_fechado(contorno)
+                for furo in furos:
+                    xc = x0 + float(furo.lf)
+                    xa = xc - float(furo.b) / 2.0
+                    xb = xc + float(furo.b) / 2.0
+                    ya = y0 + float(furo.c)
+                    yb = ya + float(furo.a)
+                    if not (xle < xa < xb < xrd and y0 < ya < yb < y1):
+                        continue
+                    # Contorno externo é horário; os vazios são anti-horários.
+                    abertura = caminho_fechado([
+                        (xa, ya), (xb, ya), (xb, yb), (xa, yb)
+                    ])
+                    caminho = MplPath.make_compound_path(caminho, abertura)
+
+                bloco = PathPatch(
+                    caminho, facecolor='#808080', edgecolor='#777777',
+                    linewidth=0.8, alpha=0.20, zorder=0.2
+                )
+                ax.add_patch(bloco)
+                geometria_viga.append(bloco)
+
+        return geometria_viga, m
+
+    def _desenhar_modelo_estrutural(self, ax, barras, nos, tam_apoio, xmax, xmin, xs, ys) -> dict:
+        """
+        Desenha barras, nós, numeração e apoios.
+
+        Args:
+
+            ax: eixos Matplotlib
+            barras: lista de barras
+            nos: lista de nós
+            tam_apoio: tam apoio
+            xmax: xmax
+            xmin: xmin
+            xs: xs
+            ys: ys
+
+        Returns:
+
+            grupos.
+        """
+
+        from matplotlib.patches import Circle
+        from matplotlib.patches import Polygon
+        from matplotlib.patches import Rectangle
+        # ------------------------------------------------------------------
+        # GRUPOS DE ARTISTAS E MODELO ESTRUTURAL
+        # ------------------------------------------------------------------
+        grupos = {'Modelo estrutural': [], 'Nós': [], 'Números dos nós': [], 'Números das barras': [],
+                  'Apoios': [], 'Cargas distribuídas': [], 'Forças nodais': [], 'Momentos nodais': []}
+
+        for barra in barras:
+            xi, yi = barra.noi.x, barra.noi.y
+            xj, yj = barra.noj.x, barra.noj.y
+            linha_modelo, = ax.plot([xi, xj], [yi, yj], color='#2866a6', lw=2.1, zorder=2)
+            grupos['Modelo estrutural'].append(linha_modelo)
+            # Deslocamento perpendicular à barra em pontos de tela.
+            vx, vy = xj - xi, yj - yi
+            comprimento = (vx * vx + vy * vy) ** 0.5
+            if comprimento:
+                ox, oy = -vy / comprimento, vx / comprimento
+            else:
+                ox, oy = 0, 1
+            anot = ax.annotate(str(barra.num), ((xi+xj)/2, (yi+yj)/2),
+                               xytext=(9*ox, 9*oy), textcoords='offset points',
+                               ha='center', va='center', fontsize=8,
+                               color='#b14e20', zorder=5)
+            grupos['Números das barras'].append(anot)
+
+        pontos = ax.scatter(xs, ys, s=19, color='#153956', zorder=4)
+        grupos['Nós'].append(pontos)
+        for no in nos:
+            anot = ax.annotate(str(no.num), (no.x, no.y),
+                               xytext=(4, -12), textcoords='offset points',
+                               fontsize=7.5, color='#333333', zorder=5)
+            grupos['Números dos nós'].append(anot)
+
+        for no in nos:
+            tx, ty, rz = bool(no.Tx), bool(no.Ty), bool(no.Rz)
+            if not (tx or ty or rz):
+                continue
+            artistas = []
+            if tx and ty and rz:  # engaste: linha vertical hachurada (opção 3)
+                # A hachura fica do lado externo do vão, tanto à esquerda
+                # quanto à direita. Todas as linhas pertencem ao grupo Apoios.
+                centro_x = (xmin + xmax) / 2.0
+                lado_externo = -1 if no.x <= centro_x else 1
+                meia_altura = 1.5 * tam_apoio
+                linha, = ax.plot(
+                    [no.x, no.x],
+                    [no.y - meia_altura, no.y + meia_altura],
+                    color='black', linewidth=2.2, zorder=6,
+                    solid_capstyle='butt'
+                )
+                artistas.append(linha)
+                n_hachuras = 8
+                passo = 2 * meia_altura / (n_hachuras + 1)
+                for i in range(1, n_hachuras + 1):
+                    y0 = no.y - meia_altura + i * passo
+                    # Traços diagonais apenas para fora da viga.
+                    traco, = ax.plot(
+                        [no.x, no.x + lado_externo * 0.55 * tam_apoio],
+                        [y0, y0 - 0.55 * passo],
+                        color='black', linewidth=1.1, zorder=6
+                    )
+                    artistas.append(traco)
+            elif tx and ty:  # apoio articulado
+                artistas.append(Polygon([(no.x, no.y),
+                                          (no.x-tam_apoio, no.y-tam_apoio),
+                                          (no.x+tam_apoio, no.y-tam_apoio)],
+                                         closed=True, facecolor='#cccccc',
+                                         edgecolor='black', zorder=6))
+            elif ty and not tx:  # apoio móvel vertical
+                artistas.append(Polygon([(no.x, no.y),
+                                          (no.x-tam_apoio, no.y-tam_apoio*.8),
+                                          (no.x+tam_apoio, no.y-tam_apoio*.8)],
+                                         closed=True, facecolor='#dddddd',
+                                         edgecolor='black', zorder=6))
+                for s in (-0.5, 0.5):
+                    artistas.append(Circle((no.x+s*tam_apoio,
+                                            no.y-1.03*tam_apoio),
+                                           radius=tam_apoio*.16,
+                                           facecolor='white', edgecolor='black',
+                                           zorder=6))
+            elif tx and not ty:  # apoio móvel horizontal
+                artistas.append(Polygon([(no.x, no.y),
+                                          (no.x-tam_apoio*.8, no.y-tam_apoio),
+                                          (no.x-tam_apoio*.8, no.y+tam_apoio)],
+                                         closed=True, facecolor='#dddddd',
+                                         edgecolor='black', zorder=6))
+            elif rz:
+                artistas.append(Rectangle((no.x-tam_apoio*.25,
+                                            no.y-tam_apoio*.25),
+                                           tam_apoio*.5, tam_apoio*.5,
+                                           fill=False, edgecolor='#555555', zorder=6))
+            # Linhas do engaste já foram adicionadas por ax.plot().
+            # Os demais símbolos são patches e precisam de ax.add_patch().
+            from matplotlib.patches import Patch
+            for artista in artistas:
+                if isinstance(artista, Patch):
+                    ax.add_patch(artista)
+            grupos['Apoios'].extend(artistas)
+
+        return grupos
+
+    def _desenhar_cargas_distribuidas(self, ax, escala, grupos):
+        """
+        Desenha os carregamentos distribuídos.
+
+        Args:
+
+            ax: eixos Matplotlib
+            escala: dimensão de referência gráfica
+            grupos: dicionário de artistas gráficos
+
+        Returns:
+
+            cargas.
+        """
+
+        # ------------------------------------------------------------------
+        # CARREGAMENTOS DISTRIBUÍDOS
+        # ------------------------------------------------------------------
+        # Cargas distribuídas: Py local, positivo no eixo y local da barra.
+
+        # Cargas distribuídas nos eixos locais das barras.
+        # A representação gráfica não altera os carregamentos do modelo.
+        from matplotlib.patches import FancyArrowPatch, Arc
+
+        cargas = getattr(self.modelo, 'carregamentos', [])
+        segmentos = []
+
+        cor_carga = '#b83280'
+        comprimento_seta = escala * 0.045
+        espacamento = escala * 0.035
+
+        for carga in cargas:
+            if not all(hasattr(carga, k) for k in
+                       ('w1', 'w2', 'lw', 'a', 'barra')):
+                continue
+
+            barra = carga.barra
+
+            xi, yi = barra.noi.x, barra.noi.y
+            xj, yj = barra.noj.x, barra.noj.y
+
+            vx = xj - xi
+            vy = yj - yi
+            L = (vx**2 + vy**2)**0.5
+
+            if L <= 0 or carga.lw <= 0:
+                continue
+
+            ex, ey = vx / L, vy / L
+            nx, ny = -ey, ex
+
+            inicio = max(0.0, carga.a)
+            fim = min(L, carga.a + carga.lw)
+
+            if fim <= inicio:
+                continue
+
+            def intensidade(s):
+                return carga.w1 + (
+                    carga.w2 - carga.w1
+                ) * (s - carga.a) / carga.lw
+
+            # Número de setas proporcional ao comprimento carregado.
+            n = max(2, int((fim - inicio) / espacamento) + 1)
+
+            for i in range(n):
+                s = inicio + (fim - inicio) * i / (n - 1)
+                w = intensidade(s)
+
+                if abs(w) < 1e-12:
+                    continue
+
+                x = xi + ex * s
+                y = yi + ey * s
+
+                sinal = 1 if w > 0 else -1
+                altura = comprimento_seta * sinal
+
+                origem = (x + nx * altura, y + ny * altura)
+
+                seta = FancyArrowPatch(
+                    origem, (x, y),
+                    arrowstyle='-|>',
+                    mutation_scale=9,
+                    linewidth=1.0,
+                    color=cor_carga,
+                    zorder=3
+                )
+
+                ax.add_patch(seta)
+                grupos['Cargas distribuídas'].append(seta)
+
+            # Linha que une as origens das setas.
+            w_ini = intensidade(inicio)
+            w_fim = intensidade(fim)
+
+            def ponto_externo(s, w):
+                x = xi + ex * s
+                y = yi + ey * s
+                sinal = 1 if w > 0 else -1
+                return (
+                    x + nx * comprimento_seta * sinal,
+                    y + ny * comprimento_seta * sinal
+                )
+
+            p1 = ponto_externo(inicio, w_ini)
+            p2 = ponto_externo(fim, w_fim)
+
+            linha, = ax.plot(
+                [p1[0], p2[0]],
+                [p1[1], p2[1]],
+                color=cor_carga,
+                linewidth=1.0,
+                zorder=3
+            )
+            grupos['Cargas distribuídas'].append(linha)
+
+            # Dados para agrupar as etiquetas das cargas.
+            if abs(carga.w1 - carga.w2) < 1e-10:
+                segmentos.append({
+                    'x': (xi + xj) / 2,
+                    'y': (yi + yj) / 2,
+                    'valor': carga.w1,
+                    'nx': nx,
+                    'ny': ny
+                })
+            else:
+                xm = (p1[0] + p2[0]) / 2
+                ym = (p1[1] + p2[1]) / 2
+                etiqueta = ax.annotate(
+                    f'q: {carga.w1:g} a {carga.w2:g}',
+                    (xm, ym),
+                    xytext=(0, 9),
+                    textcoords='offset points',
+                    ha='center',
+                    fontsize=8,
+                    color=cor_carga
+                )
+                grupos['Cargas distribuídas'].append(etiqueta)
+
+        # Agrupa etiquetas de cargas uniformes em faixas horizontais.
+        # Uma etiqueta por faixa de mesma intensidade e orientação.
+        grupos_etiquetas = {}
+
+        for seg in segmentos:
+            chave = (
+                round(seg['y'], 5),
+                round(seg['valor'], 8),
+                round(seg['nx'], 5),
+                round(seg['ny'], 5)
+            )
+            grupos_etiquetas.setdefault(chave, []).append(seg)
+
+        for chave, itens in grupos_etiquetas.items():
+            xmedio = sum(s['x'] for s in itens) / len(itens)
+            ymedio = sum(s['y'] for s in itens) / len(itens)
+            valor = itens[0]['valor']
+
+            nx = itens[0]['nx']
+            ny = itens[0]['ny']
+            sinal = 1 if valor > 0 else -1
+
+            posicao = (
+                xmedio + nx * sinal * comprimento_seta * 1.25,
+                ymedio + ny * sinal * comprimento_seta * 1.25
+            )
+
+            etiqueta = ax.annotate(
+                f'q = {valor:g}',
+                posicao,
+                fontsize=9,
+                fontweight='bold',
+                color=cor_carga,
+                ha='center',
+                va='center',
+                zorder=5
+            )
+
+            grupos['Cargas distribuídas'].append(etiqueta)
+
+        return cargas
+
+    def _desenhar_cargas_nodais(self, ax, escala, grupos, nos) -> None:
+        """
+        Desenha forças e momentos nodais.
+
+        Args:
+
+            ax: eixos Matplotlib
+            escala: dimensão de referência gráfica
+            grupos: dicionário de artistas gráficos
+            nos: lista de nós
+        """
+
+        from matplotlib.patches import Arc
+        from matplotlib.patches import FancyArrowPatch
+        # ------------------------------------------------------------------
+        # FORÇAS E MOMENTOS NODAIS
+        # ------------------------------------------------------------------
+        # Forças nodais em coordenadas globais.
+        for no in nos:
+            for valor, ux, uy, desloc in ((no.Fx, 1, 0, (0,12)), (no.Fy, 0, 1, (12,0))):
+                if abs(valor) < 1e-12:
+                    continue
+                sinal = 1 if valor > 0 else -1
+                tamanho = escala*.065
+                origem = (no.x-ux*sinal*tamanho, no.y-uy*sinal*tamanho)
+                seta = FancyArrowPatch(origem, (no.x,no.y), arrowstyle='-|>',
+                                        mutation_scale=12, lw=1.5,
+                                        color='#198754', zorder=7)
+                ax.add_patch(seta)
+                grupos['Forças nodais'].append(seta)
+                anot = ax.annotate(f'{valor:g}', origem, xytext=desloc,
+                                   textcoords='offset points', fontsize=8,
+                                   color='#198754', ha='center')
+                grupos['Forças nodais'].append(anot)
+            if abs(no.Mz) > 1e-12:
+                raio = escala*.027
+                arco = Arc((no.x,no.y), 2*raio, 2*raio, theta1=25, theta2=315,
+                           color='#b8860b', lw=1.5, zorder=7)
+                ax.add_patch(arco)
+                grupos['Momentos nodais'].append(arco)
+                sinal = 1 if no.Mz > 0 else -1
+                ang = 315 if sinal > 0 else 25
+                import math
+                t = math.radians(ang)
+                ponta = (no.x+raio*math.cos(t), no.y+raio*math.sin(t))
+                tang = (-math.sin(t)*sinal, math.cos(t)*sinal)
+                seta = FancyArrowPatch((ponta[0]-tang[0]*raio*.35,
+                                        ponta[1]-tang[1]*raio*.35), ponta,
+                                        arrowstyle='-|>', mutation_scale=11,
+                                        color='#b8860b', zorder=8)
+                ax.add_patch(seta)
+                grupos['Momentos nodais'].append(seta)
+                anot = ax.annotate(f'M={no.Mz:g}', (no.x,no.y),
+                                   xytext=(12,15), textcoords='offset points',
+                                   fontsize=8, color='#b8860b')
+                grupos['Momentos nodais'].append(anot)
+
+
+    def _desenhar_momento_fletor(self, ax, barras, cargas, decalagem_automatica, escala, fig, grupos) -> tuple:
+        """
+        Desenha o momento fletor e a envoltória decalada.
+
+        Args:
+
+            ax: eixos Matplotlib
+            barras: lista de barras
+            cargas: cargas
+            decalagem_automatica: decalagem automatica
+            escala: dimensão de referência gráfica
+            fig: figura Matplotlib
+            grupos: dicionário de artistas gráficos
+
+        Returns:
+
+            solicitacoes, trechos, escala_momento, atualizar_momento.
+        """
+
+        import numpy as np
+        # ============================================================
+        # DIAGRAMA DE MOMENTO FLETOR
+        # ============================================================
+        artistas_momento = []
+        etiquetas_momento = []
+        dados_momento = []
+        extremos = []
+        solicitacoes = self.modelo.portico.calcula_solicitacoes_internas(cargas)
+        # Mantém os esforços das barras fictícias ocultos na apresentação.
+        solicitacoes = [(b, x, np.zeros_like(N), np.zeros_like(V), np.zeros_like(M))
+                        if getattr(b, "ficticia", False) else (b, x, N, V, M)
+                        for b, x, N, V, M in solicitacoes]
+        for barra, x_local, N, V, M in solicitacoes:
+            xi, yi = barra.noi.x, barra.noi.y
+            dx_b = barra.noj.x - xi
+            dy_b = barra.noj.y - yi
+            L = np.hypot(dx_b, dy_b)
+            if L <= 0:
+                continue
+            c, s = dx_b/L, dy_b/L
+            dados_momento.append((barra, xi, yi, c, s, x_local, M))
+            if not getattr(barra, 'ficticia', False):
+                extremos.extend((float(M[k]), barra.num, float(x_local[k]))
+                                for k in (np.argmin(M), np.argmax(M)))
+
+        dados_decalados = calcula_momentos_decalados(
+            dados_momento, decalagem_automatica,
+            self.decalagem_cm if self._decalagem_manual else None)
+
+        Mmax = max((np.max(np.abs(d[6])) for d in dados_momento), default=0.0)
+        escala_momento = 0.06 * escala / Mmax if Mmax > 1e-12 else 1.0
+        objetos_momento = []
+        etiquetas_extremos = []
+        pontos_rotulados = set()
+        extremos_ordenados = sorted(extremos, key=lambda item: item[0])
+        minimo_global = extremos_ordenados[0] if extremos_ordenados else None
+        maximo_global = extremos_ordenados[-1] if extremos_ordenados else None
+
+        objetos_decalados = []
+        artistas_decalados = []
+        for indice, (barra, xi, yi, c, s, x_local, M) in enumerate(dados_momento):
+            x_base = xi + c*x_local
+            y_base = yi + s*x_local
+            linha, = ax.plot([], [], color='#16803c', lw=1.8,
+                             zorder=7, visible=False)
+            preenchimento = ax.fill([], [], color='#16803c',
+                                     alpha=0.13, zorder=3,
+                                     visible=False)[0]
+            artistas_momento.extend((linha, preenchimento))
+            objetos_momento.append((linha, preenchimento,
+                                     x_base, y_base, c, s, M))
+            if not getattr(barra, 'ficticia', False) and abs(s) < 1e-7:
+                for envoltoria in dados_decalados[indice]:
+                    linha_dec, = ax.plot([], [], color='#d97706', lw=1.5,
+                                         linestyle=(0, (4, 3)), zorder=9,
+                                         visible=False)
+                    artistas_decalados.append(linha_dec)
+                    objetos_decalados.append((linha_dec, x_base, y_base,
+                                              c, s, envoltoria))
+
+        trechos = self._trechos_geometricos(barras)
+        momentos_por_barra = {id(b): (float(m[0]), float(m[-1]))
+                              for b, _, _, _, _, _, m in dados_momento}
+        rotulos_m = self._pontos_rotulo_trechos(trechos, momentos_por_barra)
+        for no, valor, barra in rotulos_m:
+            c = (barra.noj.x-barra.noi.x)/barra.L
+            sn = (barra.noj.y-barra.noi.y)/barra.L
+            xb, yb = float(no.x), float(no.y)
+            anot = ax.annotate(f'{valor:.3g}', (xb, yb),
+                               xytext=(5, 8), textcoords='offset points',
+                               fontsize=7, color='#126a32', visible=False, zorder=10)
+            etiquetas_momento.append((anot, xb, yb, c, sn, valor))
+
+        # Extremos globais continuam disponíveis no controle independente.
+        candidatos = [(float(M[k]), barra, float(x_local[k]))
+                      for barra, _, _, _, _, x_local, M in dados_momento
+                      if not getattr(barra, 'ficticia', False)
+                      for k in (np.argmin(M), np.argmax(M))]
+        if candidatos:
+            for nome, item in (('Mmín', min(candidatos, key=lambda r: r[0])),
+                               ('Mmáx', max(candidatos, key=lambda r: r[0]))):
+                valor, barra, x_local = item
+                c = (barra.noj.x-barra.noi.x)/barra.L
+                sn = (barra.noj.y-barra.noi.y)/barra.L
+                xb = barra.noi.x + c*x_local
+                yb = barra.noi.y + sn*x_local
+                anot = ax.annotate(f'{nome} = {valor:.4g}', (xb, yb),
+                                   xytext=(9, -15 if valor >= 0 else 12),
+                                   textcoords='offset points', fontsize=8,
+                                   fontweight='bold', color='#126a32',
+                                   bbox=dict(boxstyle='round,pad=0.2',
+                                             facecolor='white', alpha=0.85,
+                                             edgecolor='none'),
+                                   visible=False, zorder=12)
+                etiquetas_extremos.append((anot, xb, yb, c, sn, valor))
+
+        def atualizar_momento(fator):
+            for linha, preenchimento, xb, yb, c, s, M in objetos_momento:
+                xd = xb + s*fator*M
+                yd = yb - c*fator*M
+                linha.set_data(xd, yd)
+                preenchimento.set_xy(np.column_stack((
+                    np.r_[xb, xd[::-1]], np.r_[yb, yd[::-1]])))
+            for linha, xb, yb, c, s, envoltoria in objetos_decalados:
+                linha.set_data(xb + s*fator*envoltoria,
+                               yb - c*fator*envoltoria)
+            for anot, xb, yb, c, s, valor in (
+                    etiquetas_momento + etiquetas_extremos):
+                anot.xy = (xb + s*fator*valor, yb - c*fator*valor)
+            fig.canvas.draw_idle()
+
+        atualizar_momento(escala_momento)
+        grupos['Momento fletor'] = artistas_momento
+        grupos['Diagrama decalado'] = artistas_decalados
+        grupos['Valores dos momentos'] = [item[0] for item in etiquetas_momento]
+        grupos['Extremos do momento'] = [item[0] for item in etiquetas_extremos]
+
+        if extremos:
+            maximo = max(extremos, key=lambda item: item[0])
+            minimo = min(extremos, key=lambda item: item[0])
+            texto_extremos = (
+                f'Mmáx = {maximo[0]:.4g} (barra {maximo[1]}, {maximo[2]})\n'
+                f'Mmín = {minimo[0]:.4g} (barra {minimo[1]}, {minimo[2]})'
+            )
+        else:
+            texto_extremos = 'Momentos indisponíveis'
+
+        return solicitacoes, trechos, escala_momento, atualizar_momento
+
+    def _desenhar_esforcos_normal_cortante(self, ax, escala, fig, grupos, solicitacoes, trechos) -> dict:
+        """
+        Desenha os diagramas de esforço normal e cortante.
+
+        Args:
+
+            ax: eixos Matplotlib
+            escala: dimensão de referência gráfica
+            fig: figura Matplotlib
+            grupos: dicionário de artistas gráficos
+            solicitacoes: solicitações internas das barras
+            trechos: trechos geométricos das barras
+
+        Returns:
+
+            diagramas_nv.
+        """
+
+        import numpy as np
+        # ============================================================
+        # DIAGRAMAS DE ESFORCO NORMAL E CORTANTE
+        # ============================================================
+        diagramas_nv = {}
+        for tipo, componentes, cor in (
+            ('Esforço normal', (0, 3), '#7c3aed'),
+            ('Esforço cortante', (1, 4), '#e07b18'),
+        ):
+            dados = []
+            for barra, x, N, V, M in solicitacoes:
+                xi, yi = barra.noi.x, barra.noi.y
+                vx = barra.noj.x - xi
+                vy = barra.noj.y - yi
+                L = np.hypot(vx, vy)
+                if L <= 0:
+                    continue
+                q = N if componentes == (0, 3) else V
+                dados.append((barra, xi, yi, vx/L, vy/L, x, q))
+
+            qmax = max((np.max(np.abs(d[6])) for d in dados), default=0.0)
+            fator_auto = 0.06 * escala / qmax if qmax > 1e-12 else 1.0
+            objetos, etiquetas, pontos_vistos = [], [], set()
+            for barra, xi, yi, c, s, x, q in dados:
+                xb = xi + c*x
+                yb = yi + s*x
+                linha, = ax.plot([], [], color=cor, lw=1.8, zorder=7,
+                                 visible=False)
+                preenchimento = ax.fill([], [], color=cor, alpha=0.13,
+                                         zorder=3, visible=False)[0]
+                objetos.append((linha, preenchimento, xb, yb, c, s, q))
+            valores_nv = {id(b): (float(q[0]), float(q[-1]))
+                          for b, _, _, _, _, _, q in dados}
+            for no, valor, barra in self._pontos_rotulo_trechos(trechos, valores_nv):
+                c = (barra.noj.x-barra.noi.x)/barra.L
+                sn = (barra.noj.y-barra.noi.y)/barra.L
+                xb, yb = float(no.x), float(no.y)
+                anot = ax.annotate(f'{valor:.3g}', (xb, yb),
+                                   xytext=(5, 8), textcoords='offset points',
+                                   fontsize=7, color=cor, visible=False, zorder=10)
+                etiquetas.append((anot, xb, yb, c, sn, valor))
+
+            def atualizar(fator, objetos=objetos, etiquetas=etiquetas):
+                for linha, preenchimento, xb, yb, c, s, q in objetos:
+                    xd = xb + s*fator*q
+                    yd = yb - c*fator*q
+                    linha.set_data(xd, yd)
+                    preenchimento.set_xy(np.column_stack((
+                        np.r_[xb, xd[::-1]], np.r_[yb, yd[::-1]])))
+                for anot, xb, yb, c, s, valor in etiquetas:
+                    anot.xy = (xb + s*fator*valor, yb - c*fator*valor)
+                fig.canvas.draw_idle()
+
+            atualizar(fator_auto)
+            grupos[tipo] = [a for linha, preenchimento, *_ in objetos
+                            for a in (linha, preenchimento)]
+            grupos['Valores ' + ('N' if tipo == 'Esforço normal' else 'V')] = [
+                item[0] for item in etiquetas]
+            diagramas_nv[tipo] = {
+                'atualizar': atualizar,
+                'fator': fator_auto,
+                'etiquetas': etiquetas,
+                'nome_valores': 'Valores ' + ('N' if tipo == 'Esforço normal' else 'V'),
+            }
+
+        return diagramas_nv
+
+    def _desenhar_diagramas_armaduras(self, ax, barras, escala, fig, grupos, trechos) -> dict:
+        """
+        Desenha os diagramas de áreas de armadura.
+
+        Args:
+
+            ax: eixos Matplotlib
+            barras: lista de barras
+            escala: dimensão de referência gráfica
+            fig: figura Matplotlib
+            grupos: dicionário de artistas gráficos
+            trechos: trechos geométricos das barras
+
+        Returns:
+
+            diagramas_armadura.
+        """
+
+        import numpy as np
+        # ============================================================
+        # ARMADURAS: pontos i e j ligados por retas.
+        # ASL acompanha o sinal do momento em cada extremidade:
+        # M negativo -> acima (barra horizontal i->j); M positivo -> abaixo.
+        # ASL2 usa o sentido oposto ao ASL em cada ponto.
+        # Um unico controle e escala para ambas.
+        # ============================================================
+        diagramas_armadura = {}
+        configuracoes_armadura = (
+            ('ASL', 'Armadura longitudinal', 'Valores armadura longitudinal',
+             '#087e8b', +1),
+            ('ASL2', 'Armadura longitudinal', 'Valores armadura longitudinal',
+             '#1f9cc1', -1),
+            ('ASW_S', 'Armadura transversal', 'Valores armadura transversal',
+             '#b23a48', +1),
+        )
+        dados_armadura = {}
+        for atributo, titulo, nome_valores, cor, sentido in configuracoes_armadura:
+            dados = []
+            for barra in barras:
+                if getattr(barra, "ficticia", False):
+                    continue
+                bruto = getattr(barra, atributo, None)
+                if bruto is None:
+                    continue
+                valores = np.asarray(bruto, dtype=float).ravel()
+                if valores.size != 2:
+                    raise ValueError(
+                        f'Barra {barra.num}: {atributo} deve ter dois valores (i, j).')
+                if not np.all(np.isfinite(valores)):
+                    continue
+                # ASL2 ausente ou nulo nao gera diagrama.
+                if atributo == 'ASL2' and not np.any(np.abs(valores) > 1e-12):
+                    continue
+                xi, yi = barra.noi.x, barra.noi.y
+                vx, vy = barra.noj.x - xi, barra.noj.y - yi
+                L = np.hypot(vx, vy)
+                if L <= 0:
+                    continue
+                # Sinais do momento interno nos pontos i e j, conforme
+                # a convencao ja utilizada no diagrama de momento fletor.
+                if atributo in ('ASL', 'ASL2'):
+                    fl = np.asarray(barra.fl, dtype=float).ravel()
+                    if fl.size < 6:
+                        raise ValueError(
+                            f'Barra {barra.num}: fl deve ter 6 componentes.')
+                    momentos = np.array([-fl[2], fl[5]], dtype=float)
+                    sentidos = np.sign(momentos)
+                    # Em M=0, conserva o lado do outro extremo da barra;
+                    # se ambos forem zero, usa o lado positivo do diagrama.
+                    if sentidos[0] == 0:
+                        sentidos[0] = sentidos[1] if sentidos[1] != 0 else 1.0
+                    if sentidos[1] == 0:
+                        sentidos[1] = sentidos[0]
+                else:
+                    sentidos = np.ones(2, dtype=float)
+                dados.append((barra, xi, yi, vx/L, vy/L, L, valores, sentidos))
+            dados_armadura[atributo] = dados
+
+        for titulo, atributos in (
+            ('Armadura longitudinal', ('ASL', 'ASL2')),
+            ('Armadura transversal', ('ASW_S',)),
+        ):
+            maior = max((float(np.max(np.abs(item[-2])))
+                         for atributo in atributos
+                         for item in dados_armadura[atributo]), default=0.0)
+            fator_auto = 0.06 * escala / maior if maior > 1e-12 else 1.0
+            objetos, etiquetas, pontos_vistos = [], [], set()
+            nome_valores = ('Valores armadura longitudinal' if
+                           titulo == 'Armadura longitudinal' else
+                           'Valores armadura transversal')
+            grupos[titulo] = []
+            grupos[nome_valores] = []
+            for atributo, grupo, _, cor, sentido in configuracoes_armadura:
+                if grupo != titulo:
+                    continue
+                for barra, xi, yi, c, sn, L, valores, sentidos_m in dados_armadura[atributo]:
+                    xb = np.array([xi, xi + c*L])
+                    yb = np.array([yi, yi + sn*L])
+                    linha, = ax.plot([], [], color=cor, lw=1.8, marker='o',
+                                     markersize=3.2, zorder=7, visible=False)
+                    preenchimento = ax.fill([], [], color=cor, alpha=0.14,
+                                             zorder=3, visible=False)[0]
+                    objetos.append((linha, preenchimento, xb, yb, c, sn,
+                                    valores, sentido*sentidos_m))
+                    grupos[titulo].extend((linha, preenchimento))
+            # Etiquetas apenas nas extremidades e nos extremos interiores
+            # de cada trecho, separadamente para cada tipo de armadura.
+            for atributo, grupo, _, cor, sentido in configuracoes_armadura:
+                if grupo != titulo:
+                    continue
+                valores_atributo = {
+                    id(barra): (float(valores[0]), float(valores[1]))
+                    for barra, _, _, _, _, _, valores, _ in dados_armadura[atributo]
+                }
+                for no, valor, barra in self._pontos_rotulo_trechos(trechos, valores_atributo):
+                    c = (barra.noj.x-barra.noi.x)/barra.L
+                    sn = (barra.noj.y-barra.noi.y)/barra.L
+                    momentos = np.asarray(barra.esforcos_exibicao, dtype=float)
+                    momento = -momentos[2] if no is barra.noi else momentos[5]
+                    sinal_ponto = float(sentido * (np.sign(momento) or 1.0)) if atributo != 'ASW_S' else 1.0
+                    xb, yb = float(no.x), float(no.y)
+                    chave = (atributo, round(xb, 5), round(yb, 5), round(valor, 8))
+                    if chave in pontos_vistos:
+                        continue
+                    pontos_vistos.add(chave)
+                    anot = ax.annotate(f'{valor:.3g}', (xb, yb),
+                                       xytext=(5, 8), textcoords='offset points',
+                                       fontsize=7, color=cor, visible=False, zorder=10)
+                    etiquetas.append((anot, xb, yb, c, sn, valor, sinal_ponto))
+                    grupos[nome_valores].append(anot)
+
+            def atualizar_armadura(fator, objetos=objetos, etiquetas=etiquetas):
+                for linha, preenchimento, xb, yb, c, sn, valores, sentidos in objetos:
+                    xd = xb + sn*fator*valores*sentidos
+                    yd = yb - c*fator*valores*sentidos
+                    linha.set_data(xd, yd)
+                    preenchimento.set_xy(np.column_stack((
+                        np.r_[xb, xd[::-1]], np.r_[yb, yd[::-1]])))
+                for anot, x0, y0, c, sn, valor, sentido in etiquetas:
+                    anot.xy = (x0 + sentido*sn*fator*valor,
+                               y0 - sentido*c*fator*valor)
+                fig.canvas.draw_idle()
+
+            atualizar_armadura(fator_auto)
+            diagramas_armadura[titulo] = {
+                'atualizar': atualizar_armadura,
+                'fator': fator_auto,
+                'nome_valores': nome_valores,
+            }
+
+        return diagramas_armadura
+
+    def _desenhar_deformada_viga(self, ax, escala, fig, nos) -> tuple:
+        """
+        Desenha a deformada e prepara sua atualização gráfica.
+
+        Args:
+
+            ax: eixos Matplotlib
+            escala: dimensão de referência gráfica
+            fig: figura Matplotlib
+            nos: lista de nós
+
+        Returns:
+
+            linhas_deformada, escala_auto, atualizar_deformada, deslocamento_no.
+        """
+
+        import numpy as np
+        deslocamento_no = None
+        # ============================================================
+        # DEFORMADA DA ESTRUTURA
+        # ============================================================
+
+        linhas_deformada = []
+        dados_deformada = []
+        escala_auto = 1.0
+        slider = None
+
+        portico = getattr(self.modelo, "portico", None)
+
+        if portico is not None and hasattr(portico, "u"):
+            u = np.asarray(portico.u, dtype=float).ravel()
+
+            if len(u) != 3 * len(nos):
+                raise ValueError(
+                    "O vetor de deslocamentos tem dimensão incompatível."
+                )
+
+            if not np.all(np.isfinite(u)):
+                raise ValueError(
+                    "O vetor de deslocamentos contém valores inválidos."
+                )
+
+            # Deslocamentos nodais para a informação de resultados.
+            def deslocamento_no(no):
+                i = 3 * (no.num - 1)
+                return u[i:i + 3]
+
+            max_u = np.max(np.hypot(u[0::3], u[1::3]), initial=0.0)
+
+            if max_u > 1e-14:
+                escala_auto = 0.05 * escala / max_u
+
+            dados_deformada = portico.calcula_deformada(40)
+
+            for barra, coordenadas, deslocamentos in dados_deformada:
+                linha, = ax.plot(
+                    [], [],
+                    color="crimson",
+                    linewidth=2.0,
+                    zorder=8,
+                    visible=False
+                )
+
+                linhas_deformada.append(linha)
+
+        def atualizar_deformada(fator):
+            for linha, dados in zip(
+                linhas_deformada, dados_deformada
+            ):
+                barra, coordenadas, deslocamentos = dados
+                pontos = coordenadas + fator*deslocamentos
+                linha.set_data(pontos[:, 0], pontos[:, 1])
+
+            fig.canvas.draw_idle()
+
+        if linhas_deformada:
+            atualizar_deformada(escala_auto)
+
+
+
+        return linhas_deformada, escala_auto, atualizar_deformada, deslocamento_no
+
+    def _desenhar_detalhamento_longitudinal(self, ancoragem_apoios, ancoragem_automatica, ax, boa_aderencia, decalagem_automatica, grupos, m) -> tuple:
+        """
+        Desenha as armaduras longitudinais e prepara sua atualização.
+
+        Args:
+
+            ancoragem_apoios: ancoragem apoios
+            ancoragem_automatica: ancoragem automatica
+            ax: eixos Matplotlib
+            boa_aderencia: boa aderencia
+            decalagem_automatica: decalagem automatica
+            grupos: dicionário de artistas gráficos
+            m: modelo da viga
+
+        Returns:
+
+            atualizar_faixas_n1_n2, artistas_n1_n2, artistas_banzos, artistas_alertas_apoios.
+        """
+
+        atualizar_faixas_n1_n2 = None
+        artistas_n1_n2, artistas_banzos, artistas_alertas_apoios = [], [], []
+        # ------------------------------------------------------------------
+        # DETALHAMENTO DAS ARMADURAS LONGITUDINAIS
+        # ------------------------------------------------------------------
+        # Detalhamento longitudinal: cores individuais e legenda fixa na área de desenho.
+        grupos['Detalhamento longitudinal'] = []
+        if hasattr(m, 'ap1') and hasattr(m, 'l') and hasattr(m, 'h'):
+            detalhamento = Detalhamento(m)
+            self.detalhamento = detalhamento
+            limite_x_esquerdo = float(m.ap1)/2.0
+            limite_x_direito = limite_x_esquerdo + float(m.l)
+            def calcular_detalhamento():
+                detalhamento.calcula_longitudinais(
+                    self.niveis_n1, self.niveis_n2,
+                    self.decalagem_cm if self._decalagem_manual else None,
+                    decalagem_automatica, ancoragem_automatica,
+                    ancoragem_apoios, boa_aderencia)
+                for nome in ('armaduras_longitudinais', 'armaduras_escalonadas',
+                             'armaduras_banzos', 'diagnosticos_ancoragem_apoios',
+                             'diagnosticos_ancoragem_banzos'):
+                    setattr(self, nome, getattr(detalhamento, nome))
+            calcular_detalhamento()
+            propostas = detalhamento.armaduras_longitudinais
+            propostas_banzos = detalhamento.armaduras_banzos
+            artistas_banzos = []
+            anotacoes_banzos = {}
+            todas = [*propostas, *propostas_banzos]
+            # Paleta discreta, com distinção suficiente entre as posições.
+            cores = ('#c0392b', '#21618c', '#148f77', '#8e44ad',
+                     '#b9770e', '#af145b', '#2874a6', '#6c7a21',
+                     '#7d3c98', '#a04000', '#117864', '#566573')
+            cores_por_posicao = {p.posicao: cores[i % len(cores)]
+                                 for i, p in enumerate(todas)}
+            cobrimento_esquematico = min(3.5, float(m.h) * 0.15)
+            # Faixas de detalhamento externas à geometria: uma pista por nível.
+            # Coordenadas são apenas gráficas; não alteram a posição física das barras.
+            distancia_inicial = max(48.0, float(m.h) * 0.60)
+            distancia_niveis = max(48.0, float(m.h) * 0.60)
+            def y_faixa(face, indice):
+                sinal = 1.0 if face == 'superior' else -1.0
+                return sinal * (float(m.h) / 2.0 + distancia_inicial
+                                + indice * distancia_niveis)
+
+            # Os artistas de N1/N2 são atualizados sem alterar os banzos.
+            artistas_n1_n2 = []
+            artistas_alertas_apoios = []
+
+            def atualizar_faixas_n1_n2():
+                for artista in artistas_n1_n2:
+                    artista.remove()
+                    if artista in grupos['Detalhamento longitudinal']:
+                        grupos['Detalhamento longitudinal'].remove(artista)
+                artistas_n1_n2.clear()
+                for artista in artistas_alertas_apoios:
+                    artista.remove()
+                    if artista in grupos['Detalhamento longitudinal']:
+                        grupos['Detalhamento longitudinal'].remove(artista)
+                artistas_alertas_apoios.clear()
+                calcular_detalhamento()
+                faixas = detalhamento.armaduras_escalonadas
+                novos_banzos = detalhamento.armaduras_banzos
+                for artista in artistas_banzos:
+                    artista.remove()
+                    if artista in grupos['Detalhamento longitudinal']:
+                        grupos['Detalhamento longitudinal'].remove(artista)
+                artistas_banzos.clear()
+                # Diagnóstico explícito: a rotina anterior apenas armazenava
+                # resultados, sem apresentar avisos no terminal ou no gráfico.
+                if ancoragem_automatica and ancoragem_apoios:
+                    from .ancoragem_apoios import relatorio_ancoragem_apoios
+                    relatorio_ancoragem_apoios(self.diagnosticos_ancoragem_apoios)
+                    avisos = [d for d in self.diagnosticos_ancoragem_apoios
+                              if not d.atendida_geometricamente]
+                    # Marcadores e diagnósticos são recalculados a cada
+                    # alteração dos controles de escalonamento.
+                    import math
+                    for d in avisos:
+                        g = getattr(d, 'gancho_90', None)
+                        if g is None:
+                            continue
+                        x_apoio = (limite_x_esquerdo if d.lado == 'esquerdo'
+                                   else limite_x_direito)
+                        y_apoio = (float(m.h) / 2.0 + 12.0
+                                   if d.face == 'superior'
+                                   else -float(m.h) / 2.0 - 12.0)
+                        deficit_gancho = max(0.0,
+                            float(d.lb_gancho_cm) - float(d.comprimento_disponivel_cm))
+                        if deficit_gancho > 1e-4:
+                            marcador, = ax.plot(
+                                [x_apoio], [y_apoio], marker='x', markersize=10,
+                                markeredgewidth=2.5, linestyle='None',
+                                color='red', zorder=32, visible=False)
+                            texto = ax.annotate(
+                                f'! {d.posicao}: gancho — faltam {deficit_gancho:.1f} cm',
+                                (x_apoio, y_apoio), xytext=(6, 7),
+                                textcoords='offset points', fontsize=8,
+                                color='red', weight='bold', zorder=33,
+                                visible=False)
+                            artistas_alertas_apoios.extend((marcador, texto))
+                            grupos['Detalhamento longitudinal'].extend((marcador, texto))
+                    # Alertas de insuficiência sem gancho viável.
+                    for d in avisos:
+                        if getattr(d, 'gancho_90', None) is not None:
+                            continue
+                        x_apoio = (limite_x_esquerdo if d.lado == 'esquerdo'
+                                   else limite_x_direito)
+                        y_apoio = (float(m.h) / 2.0 + 12.0
+                                   if d.face == 'superior'
+                                   else -float(m.h) / 2.0 - 12.0)
+                        deficit = max(0.0, d.lb_necessario_cm - d.comprimento_disponivel_cm)
+                        marcador, = ax.plot([x_apoio], [y_apoio], marker='x',
+                            markersize=10, markeredgewidth=2.5,
+                            linestyle='None', color='red', zorder=32, visible=False)
+                        texto = ax.annotate(
+                            f'! {d.posicao}: falta {deficit:.1f} cm',
+                            (x_apoio, y_apoio), xytext=(6, 7),
+                            textcoords='offset points', fontsize=8,
+                            color='red', weight='bold', zorder=33, visible=False)
+                        artistas_alertas_apoios.extend((marcador, texto))
+                        grupos['Detalhamento longitudinal'].extend((marcador, texto))
+                for proposta_b in novos_banzos:
+                    # Armaduras dos banzos permanecem na posição original,
+                    # junto à abertura, independentemente das pistas N1/N2.
+                    y_b = proposta_b.y_cm
+                    afast = max(3.0, min(5.0, float(m.h) * 0.07))
+                    if proposta_b.banzo == 'inferior' and proposta_b.face == 'inferior':
+                        y_b += afast
+                    elif proposta_b.banzo == 'superior' and proposta_b.face == 'superior':
+                        y_b -= afast
+                    cor_b = cores_por_posicao.get(proposta_b.posicao, '#566573')
+                    linha_b, = ax.plot(
+                        [proposta_b.inicio_cm, proposta_b.fim_cm], [y_b, y_b],
+                        color=cor_b, lw=2.6, zorder=14, visible=False)
+                    rotulo_b = ax.annotate(
+                        proposta_b.posicao,
+                        ((proposta_b.inicio_cm + proposta_b.fim_cm) / 2, y_b),
+                        xytext=(0, 10 if proposta_b.face == 'superior' else -13),
+                        textcoords='offset points', ha='center', fontsize=8,
+                        weight='bold', color=cor_b, visible=False, zorder=16,
+                        bbox=dict(facecolor='white', edgecolor='none', alpha=.85, pad=.5))
+                    artistas_banzos.extend((linha_b, rotulo_b))
+                    grupos['Detalhamento longitudinal'].extend((linha_b, rotulo_b))
+                for pos, anot in anotacoes_banzos.items():
+                    proposta_b = next((b for b in novos_banzos if b.posicao == pos), None)
+                    anot.set_text(
+                        f'{proposta_b.quantidade} {pos} {SIMBOLO_BITOLA}{proposta_b.bitola_mm:g} '
+                        f'c = {proposta_b.comprimento_geometrico_cm:.0f} cm '
+                        f'(As = {proposta_b.as_fornecida_cm2:.2f} cm²)'
+                        if proposta_b is not None else '')
+                # A continuidade nos furos preserva a origem N1/N2, mas
+                # pode produzir barras fisicamente distintas (bitola, número,
+                # comprimento ou nível). Cada tipo recebe posição própria.
+                # N1/N2 ficam reservadas às barras resistentes de base.
+                posicoes_ocupadas = {
+                    proposta.posicao for proposta in novos_banzos
+                } | {'N1', 'N2'}
+                proximo_numero = 3
+                identificacoes = {}
+                principais = {}
+
+                # Identifica primeiro as barras resistentes de base, evitando
+                # que porta-estribos de outra bitola sejam chamados de N1/N2.
+                for faixa_base in faixas:
+                    if faixa_base.nivel != 0:
+                        continue
+                    origem = faixa_base.posicao
+                    if origem not in principais:
+                        principais[origem] = (
+                            origem, faixa_base.face, faixa_base.quantidade,
+                            round(float(faixa_base.bitola_mm), 6),
+                            faixa_base.nivel,
+                            round(float(faixa_base.fim_cm - faixa_base.inicio_cm), 4),
+                        )
+
+                def posicao_da_faixa(faixa):
+                    """Numera tipos distintos sem modificar o aço calculado."""
+                    nonlocal proximo_numero
+
+                    chave = (
+                        faixa.posicao, faixa.face, faixa.quantidade,
+                        round(float(faixa.bitola_mm), 6), faixa.nivel,
+                        round(float(faixa.fim_cm - faixa.inicio_cm), 4),
+                    )
+                    if chave in identificacoes:
+                        return identificacoes[chave]
+
+                    if chave == principais.get(faixa.posicao):
+                        posicao = faixa.posicao
+                    else:
+                        while f'N{proximo_numero}' in posicoes_ocupadas:
+                            proximo_numero += 1
+                        posicao = f'N{proximo_numero}'
+                        proximo_numero += 1
+                        posicoes_ocupadas.add(posicao)
+
+                    identificacoes[chave] = posicao
+                    return posicao
+
+                # Define pistas por posição efetiva, e não apenas pelo nível
+                # teórico. Duas bitolas diferentes no mesmo nível precisam
+                # aparecer em alturas distintas para permitir sua leitura.
+                # Faixas da mesma posição compartilham a pista, inclusive
+                # quando ocupam intervalos descontínuos da viga.
+                pistas_por_face = {'inferior': {}, 'superior': {}}
+                faixas_identificadas = []
+                for faixa in faixas:
+                    posicao = posicao_da_faixa(faixa)
+                    faixas_identificadas.append((faixa, posicao))
+                    pistas = pistas_por_face[faixa.face]
+                    if posicao not in pistas:
+                        pistas[posicao] = len(pistas)
+
+                for faixa, posicao_grafica in faixas_identificadas:
+                    indice_pista = pistas_por_face[faixa.face][posicao_grafica]
+                    y_arm = y_faixa(faixa.face, indice_pista)
+                    cor = cores_por_posicao.get(
+                        faixa.posicao, '#566573'
+                    )
+                    # Desenho da própria barra na pista externa, incluindo
+                    # a dobra e a ponta vertical, sem ganchos desconectados.
+                    gancho_esq = None
+                    gancho_dir = None
+                    for diagnostico in self.diagnosticos_ancoragem_apoios:
+                        if (diagnostico.posicao == faixa.posicao
+                                and diagnostico.face == faixa.face
+                                and diagnostico.gancho_90 is not None):
+                            g = diagnostico.gancho_90
+                            extremidade = (faixa.inicio_cm if diagnostico.lado == 'esquerdo'
+                                           else faixa.fim_cm)
+                            if abs(extremidade - g.x_vertical_cm) <= 6.0:
+                                if diagnostico.lado == 'esquerdo':
+                                    gancho_esq = g
+                                else:
+                                    gancho_dir = g
+                    # A extremidade horizontal coincide com a tangência da
+                    # curva. Nunca desenhar a linha até x_vertical, pois isso
+                    # cria uma pequena ponta reta além do início do gancho.
+                    x_reto_esq = (gancho_esq.x_tangencia_cm if gancho_esq is not None
+                                  else faixa.inicio_cm)
+                    x_reto_dir = (gancho_dir.x_tangencia_cm if gancho_dir is not None
+                                  else faixa.fim_cm)
+
+                    def pontos_gancho(g, lado):
+                        """Pontos da curva do eixo da barra, da tangência à ponta."""
+                        sentido_x = -1.0 if lado == 'esquerdo' else 1.0
+                        angulos = [math.pi * i / 40 for i in range(21)]
+                        curva_x = [g.x_tangencia_cm + sentido_x * g.raio_eixo_cm * math.sin(a)
+                                   for a in angulos]
+                        curva_y = [y_arm + g.sentido_vertical * g.raio_eixo_cm * (1 - math.cos(a))
+                                   for a in angulos]
+                        return curva_x, curva_y
+
+                    pontos_x = [x_reto_esq, x_reto_dir]
+                    pontos_y = [y_arm, y_arm]
+                    if gancho_esq is not None:
+                        gx, gy = pontos_gancho(gancho_esq, 'esquerdo')
+                        pontos_x = [gancho_esq.x_vertical_cm, *reversed(gx), x_reto_dir]
+                        pontos_y = [gy[-1] + gancho_esq.sentido_vertical * gancho_esq.ponta_vertical_cm,
+                                    *reversed(gy), y_arm]
+                    if gancho_dir is not None:
+                        gx, gy = pontos_gancho(gancho_dir, 'direito')
+                        # gx[0] é exatamente a extremidade do trecho reto.
+                        pontos_x.extend(gx[1:])
+                        pontos_y.extend(gy[1:])
+                        pontos_x.append(gancho_dir.x_vertical_cm)
+                        pontos_y.append(gy[-1] + gancho_dir.sentido_vertical * gancho_dir.ponta_vertical_cm)
+                    linha, = ax.plot(pontos_x, pontos_y,
+                        color=cor, lw=2.6, zorder=12, visible=False)
+                    comprimento_corte = x_reto_dir - x_reto_esq
+                    for g in (gancho_esq, gancho_dir):
+                        if g is not None:
+                            comprimento_corte += math.pi * g.raio_eixo_cm / 2 + g.ponta_vertical_cm
+                    comprimento_corte = 5 * math.ceil((comprimento_corte - 1e-9) / 5)
+                    rotulo = ax.annotate(
+                        f'{faixa.quantidade} {posicao_grafica} {SIMBOLO_BITOLA}{faixa.bitola_mm:g} '
+                        f'C={comprimento_corte:.0f} cm',
+                        ((faixa.inicio_cm + faixa.fim_cm) / 2, y_arm),
+                        xytext=(0, 10),
+                        textcoords='offset points', ha='center', va='bottom', fontsize=8,
+                        weight='bold', color=cor, visible=linha.get_visible(),
+                        zorder=16,
+                        bbox=dict(facecolor='white', edgecolor='none', alpha=.78, pad=.5))
+                    artistas_n1_n2.extend((linha, rotulo))
+                    grupos['Detalhamento longitudinal'].extend((linha, rotulo))
+
+            atualizar_faixas_n1_n2()
+            self.armaduras_longitudinais = propostas
+
+            # A relação inferior esquerda fica reservada às armaduras dos banzos.
+            # As faixas externas já exibem posição, quantidade, bitola e comprimento.
+            for i, proposta in enumerate(propostas_banzos):
+                texto = (f'{proposta.quantidade} {proposta.posicao} '
+                         f'{SIMBOLO_BITOLA}{proposta.bitola_mm:g} '
+                         f'c = {proposta.comprimento_geometrico_cm:.0f} cm '
+                         f'(As = {proposta.as_fornecida_cm2:.2f} cm²)')
+                anot = ax.annotate(
+                    texto, xy=(0.018, 0.035), xycoords='axes fraction',
+                    xytext=(0, 12 * (len(propostas_banzos) - 1 - i)),
+                    textcoords='offset points', ha='left', va='bottom',
+                    color=cores_por_posicao[proposta.posicao],
+                    fontsize=8, family='DejaVu Sans', weight='bold',
+                    bbox=dict(facecolor='white', edgecolor='none', alpha=.88, pad=1.0),
+                    visible=False, zorder=30, annotation_clip=False)
+                grupos['Detalhamento longitudinal'].append(anot)
+                anotacoes_banzos[proposta.posicao] = anot
+
+        return atualizar_faixas_n1_n2, artistas_n1_n2, artistas_banzos, artistas_alertas_apoios
 
     def _desenhar_detalhamento_transversal(self, ax, m, grupos:dict) -> None:
         """
