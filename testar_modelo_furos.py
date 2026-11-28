@@ -4,9 +4,9 @@ from src.modelo_furos import ModeloFuros
 from src.visualizacao import Visualizacao
 
 furos = [
-    Furo(lf=200, b=100, a=30, c=25),
-    Furo(lf=500, b=120, a=25, c=30),
-    Furo(lf=800, b=80, a=35, c=20),
+    Furo(lf=200, b=100, a=30, c=25, beta_t = 0.1),
+    Furo(lf=500, b=120, a=25, c=30, beta_t = 0.1),
+    Furo(lf=800, b=80, a=35, c=20, beta_t = 0.1),
 ]
 
 cargas = [

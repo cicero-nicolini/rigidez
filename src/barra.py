@@ -45,6 +45,7 @@ class Barra:
         self.concreto = concreto
         self.aco = aco
         self.secao = secao
+        self.beta_flexao = 1.0
         self.L = None      
         self.kl = np.zeros((6,6))
         self.k = np.zeros((6,6))
@@ -84,11 +85,16 @@ class Barra:
         """Calcula a rigidez da barra no sistema local da barra."""
 
         # Calculando os termos da matriz de rigidez  
+        if not math.isfinite(self.beta_flexao) or not 0 < self.beta_flexao <= 1:
+            raise ValueError("beta_flexao deve estar no intervalo (0, 1].")
+
+        # Modifica somente a rigidez à flexão, preservando EA e a seção
+        EI = self.beta_flexao*self.secao.E*self.secao.I
         a1 = self.secao.E*self.secao.A/self.L
-        a2 = (12.0*self.secao.E*self.secao.I)/self.L**3
-        a3 = (6.0*self.secao.E*self.secao.I)/self.L**2
-        a4 = (4.0*self.secao.E*self.secao.I)/self.L
-        a5 = (2.0*self.secao.E*self.secao.I)/self.L
+        a2 = (12.0*EI)/self.L**3
+        a3 = (6.0*EI)/self.L**2
+        a4 = (4.0*EI)/self.L
+        a5 = (2.0*EI)/self.L
 
         # Preenchendo a matriz de rigidez local
         self.kl[0,0] = a1

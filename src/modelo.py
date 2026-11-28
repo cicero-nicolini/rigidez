@@ -8,6 +8,7 @@ from .secao import Secao
 from .barra import Barra
 from .carregamento_distribuido import Carregamento_distribuido
 from .estrutura import Estrutura
+from .furo import Furo
 from matplotlib.collections import LineCollection
 import matplotlib.pyplot as plt
 from .utilidades import print_vetor, print_matriz
@@ -15,7 +16,7 @@ from .utilidades import print_vetor, print_matriz
 class Modelo:
     """Representa as propriedades e parâmetros referente ao objeto modelo."""
 
-    def __init__(self, bw:float, h:float, l:float, lf:float, a:float, b:float, c:float, ap1:float, ap2:float, w:float = None, fck:float = None, fyk:float = None, fywk:float = None, modelo:int = 1, α:float = 90.0, θ:float = 30.0, αE:float = 1.0, cob:float = 3.5, espacamento_maximo:float = None, vinculacao_esquerda:int = 1, vinculacao_direita:int = 2, cargas=None) -> None:
+    def __init__(self, bw:float, h:float, l:float, lf:float, a:float, b:float, c:float, ap1:float, ap2:float, w:float = None, fck:float = None, fyk:float = None, fywk:float = None, modelo:int = 1, α:float = 90.0, θ:float = 30.0, αE:float = 1.0, cob:float = 3.5, espacamento_maximo:float = None, vinculacao_esquerda:int = 1, vinculacao_direita:int = 2, cargas=None, beta_t:float = 1.0) -> None:
         """
         Instancia um objeto da classe Modelo
 
@@ -29,6 +30,7 @@ class Modelo:
             lf: comprimento até centro da abertura
             a: altura da abertura
             b: largura da abertura
+            beta_t: modificador da rigidez à flexão do banzo tracionado
             c: espessura do banzo inferior na regiao da abertura
             ap1: largura pilar esquerdo
             ap2: largura pilar direito
@@ -149,7 +151,9 @@ class Modelo:
             (7, 6, secao4, False, 1),
             (6, 8, secao4, False, 1),
         ]
+        furo = Furo(lf, b, a, c, beta_t)
         self.barras = []
+        inferior, superior = [], []
         self.carregamentos = []
         for indice_trecho, (ni, nj, secao, carregado, n_original) in enumerate(trechos):
             no_inicio = self.nos[ni - 1]
@@ -181,6 +185,10 @@ class Modelo:
                               secao, concreto, aco)
                 barra.ficticia = (secao is secao4)
                 self.barras.append(barra)
+                if indice_trecho == 2:
+                    inferior.append(barra)
+                elif indice_trecho == 3:
+                    superior.append(barra)
                 barra.carregada = bool(carregado)
                 if carregado:
                     carga = Carregamento_distribuido(
@@ -189,6 +197,7 @@ class Modelo:
                     carga.calcula_fepl()
                     carga.calcula_fep()
 
+        self.banzos_furos = [(furo, tuple(inferior), tuple(superior))]
         self.portico = Estrutura(self.nos, self.barras)
         self.portico.monta_k()
         self.portico.monta_k01()

@@ -56,6 +56,7 @@ class ModeloFuros:
                 raise ValueError('As zonas de transição dos furos se sobrepõem.')
 
         self.nos, self.barras, self.carregamentos = [], [], []
+        self.banzos_furos = []
         self.cord_x, self.cord_y, self.linhas = [], [], []
         self.x_asl, self.y_asl, self.linhas_asl = [], [], []
         self.x_asw_s, self.y_asw_s, self.linhas_asw_s = [], [], []
@@ -119,9 +120,14 @@ class ModeloFuros:
             inferior_dir = no(xdir, yinf)
             superior_dir = no(xdir, ysup)
             trecho(atual, esquerda, secao_cheia, carregado=True)
+            inicio = len(self.barras)
             trecho(inferior_esq, inferior_dir, secao(f.c))
+            inferior = tuple(self.barras[inicio:])
+            inicio = len(self.barras)
             trecho(superior_esq, superior_dir, secao(self.h - f.a - f.c),
                    carregado=True)
+            superior = tuple(self.barras[inicio:])
+            self.banzos_furos.append((f, inferior, superior))
             # Ligações rígidas: nunca discretizadas e sem dimensionamento.
             trecho(inferior_esq, esquerda, secao_rigida, ficticia=True)
             trecho(esquerda, superior_esq, secao_rigida, ficticia=True)

@@ -12,13 +12,17 @@ class Furo:
     b: comprimento horizontal da abertura.
     a: altura livre da abertura.
     c: distância entre a face inferior da viga e a abertura.
+    beta_t: modificador da rigidez à flexão do banzo tracionado.
     """
     lf: float
     b: float
     a: float
     c: float
+    beta_t: float = 1.0
 
     def __post_init__(self):
+        if not isfinite(self.beta_t) or not 0 < self.beta_t <= 1:
+            raise ValueError("beta_t deve estar no intervalo (0, 1].")
         for nome in ('lf', 'b', 'a', 'c'):
             valor = getattr(self, nome)
             if not isfinite(valor):
